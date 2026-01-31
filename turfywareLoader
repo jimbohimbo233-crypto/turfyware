@@ -2,7 +2,7 @@ local library = loadstring(game:HttpGet("https://gist.githubusercontent.com/jimb
 
 
 library.rank = "dev"
-local Wm = library:Watermark("turfyware v1 | ".. "rank: " .. library.rank)
+local Wm = library:Watermark("turfyware v1.2 | ".. "rank: " .. library.rank)
 local FpsWm = Wm:AddWatermark("fps: " .. library.fps)
 coroutine.wrap(function()
     while wait(.5) do
@@ -27,6 +27,7 @@ local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
 
 local fly_toggle = false
 local fly_speed = 60
@@ -194,6 +195,287 @@ local function checkSherrif()
     end
 end
 
+-- Helper function to get player role
+local function getPlayerRole(player)
+    local backpack = player.Backpack
+    local character = player.Character
+
+    -- Check for murderer (knife)
+    if (backpack and backpack:FindFirstChild("Knife")) or 
+       (character and character:FindFirstChild("Knife")) then
+        return "murderer"
+    end
+
+    -- Check for sheriff (gun)
+    if (backpack and backpack:FindFirstChild("Gun")) or 
+       (character and character:FindFirstChild("Gun")) then
+        return "sheriff"
+    end
+
+    -- Default: innocent
+    return "innocent"
+end
+
+
+--// ESP SYSTEM
+
+local esp_toggle = false
+local gun_esp_toggle = false
+
+-- Create highlight for player
+local function createHighlight(player)
+    pcall(function()
+        if player.Character and not player.Character:FindFirstChild("ESPHighlight") then
+            local highlight = Instance.new("Highlight")
+            highlight.Name = "ESPHighlight"
+            highlight.Adornee = player.Character
+            highlight.FillTransparency = 0.5
+            highlight.OutlineTransparency = 0
+            highlight.OutlineColor = Color3.fromRGB(0, 0, 0)
+            highlight.Parent = player.Character
+
+            -- Set color based on role
+            local role = getPlayerRole(player)
+            if role == "murderer" then
+                highlight.FillColor = Color3.fromRGB(255, 0, 0) -- Red
+            elseif role == "sheriff" then
+                highlight.FillColor = Color3.fromRGB(0, 100, 255) -- Blue
+            else
+                highlight.FillColor = Color3.fromRGB(255, 255, 255) -- White
+            end
+        end
+    end)
+end
+
+-- Create health indicator
+local function createHealthIndicator(player)
+    pcall(function()
+        if not player.Character then return end
+        local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+        local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+        
+        if hrp and humanoid and not hrp:FindFirstChild("HealthIndicator") then
+            local billboard = Instance.new("BillboardGui")
+            billboard.Name = "HealthIndicator"
+            billboard.Adornee = hrp
+            billboard.Size = UDim2.new(4, 0, 1, 0)
+            billboard.AlwaysOnTop = true
+            billboard.StudsOffset = Vector3.new(0, 2, 0)
+            billboard.Parent = hrp
+
+            local nameLabel = Instance.new("TextLabel")
+            nameLabel.Name = "NameLabel"
+            nameLabel.Text = player.Name
+            nameLabel.Size = UDim2.new(1, 0, 0.4, 0)
+            nameLabel.Position = UDim2.new(0, 0, 0, 0)
+            nameLabel.BackgroundTransparency = 1
+            nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+            nameLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+            nameLabel.TextStrokeTransparency = 0
+            nameLabel.Font = Enum.Font.SourceSansBold
+            nameLabel.TextScaled = true
+            nameLabel.Parent = billboard
+
+            local healthLabel = Instance.new("TextLabel")
+            healthLabel.Name = "HealthLabel"
+            healthLabel.Text = tostring(math.floor(humanoid.Health))
+            healthLabel.Size = UDim2.new(1, 0, 0.3, 0)
+            healthLabel.Position = UDim2.new(0, 0, 0.4, 0)
+            healthLabel.BackgroundTransparency = 1
+            healthLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+            healthLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+            healthLabel.TextStrokeTransparency = 0
+            healthLabel.Font = Enum.Font.SourceSansBold
+            healthLabel.TextScaled = true
+            healthLabel.Parent = billboard
+
+            local roleLabel = Instance.new("TextLabel")
+            roleLabel.Name = "RoleLabel"
+            roleLabel.Text = ""
+            roleLabel.Size = UDim2.new(1, 0, 0.3, 0)
+            roleLabel.Position = UDim2.new(0, 0, 0.7, 0)
+            roleLabel.BackgroundTransparency = 1
+            roleLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+            roleLabel.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+            roleLabel.TextStrokeTransparency = 0
+            roleLabel.Font = Enum.Font.SourceSansBold
+            roleLabel.TextScaled = true
+            roleLabel.Parent = billboard
+        end
+    end)
+end
+
+-- Update ESP for a player
+local function updatePlayerESP(player)
+    pcall(function()
+        if not player.Character then return end
+        
+        local highlight = player.Character:FindFirstChild("ESPHighlight")
+        local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+        local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+        
+        if not humanoid or not hrp then return end
+
+        -- Update or create highlight
+        if esp_toggle then
+            if not highlight then
+                createHighlight(player)
+                createHealthIndicator(player)
+            else
+                -- Update highlight color based on current role
+                local role = getPlayerRole(player)
+                if role == "murderer" then
+                    highlight.FillColor = Color3.fromRGB(255, 0, 0)
+                elseif role == "sheriff" then
+                    highlight.FillColor = Color3.fromRGB(0, 100, 255)
+                else
+                    highlight.FillColor = Color3.fromRGB(255, 255, 255)
+                end
+            end
+
+            -- Update health indicator
+            local healthIndicator = hrp:FindFirstChild("HealthIndicator")
+            if healthIndicator then
+                local healthLabel = healthIndicator:FindFirstChild("HealthLabel")
+                local roleLabel = healthIndicator:FindFirstChild("RoleLabel")
+                
+                if healthLabel then
+                    healthLabel.Text = tostring(math.floor(humanoid.Health))
+                    
+                    -- Color health based on amount
+                    local healthPercent = humanoid.Health / humanoid.MaxHealth
+                    if healthPercent > 0.6 then
+                        healthLabel.TextColor3 = Color3.fromRGB(0, 255, 0)
+                    elseif healthPercent > 0.3 then
+                        healthLabel.TextColor3 = Color3.fromRGB(255, 255, 0)
+                    else
+                        healthLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+                    end
+                end
+
+                if roleLabel then
+                    local role = getPlayerRole(player)
+                    if role == "murderer" then
+                        roleLabel.Text = "MURDERER"
+                        roleLabel.TextColor3 = Color3.fromRGB(255, 0, 0)
+                    elseif role == "sheriff" then
+                        roleLabel.Text = "SHERIFF"
+                        roleLabel.TextColor3 = Color3.fromRGB(0, 100, 255)
+                    else
+                        roleLabel.Text = ""
+                    end
+                end
+            end
+        else
+            -- Remove ESP if toggle is off
+            if highlight then
+                highlight:Destroy()
+            end
+            local healthIndicator = hrp:FindFirstChild("HealthIndicator")
+            if healthIndicator then
+                healthIndicator:Destroy()
+            end
+        end
+    end)
+end
+
+-- Create gun ESP
+local function createGunESP()
+    pcall(function()
+        -- Remove old gun ESP
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj.Name == "GunESPHighlight" or obj.Name == "GunESPIndicator" then
+                obj:Destroy()
+            end
+        end
+
+        if not gun_esp_toggle then return end
+
+        -- Find gun in workspace
+        for _, v in pairs(workspace:GetChildren()) do
+            for _, k in pairs(v:GetChildren()) do
+                if k.Name == "GunDrop" then
+                    -- Create highlight
+                    local highlight = Instance.new("Highlight")
+                    highlight.Name = "GunESPHighlight"
+                    highlight.Adornee = k
+                    highlight.FillColor = Color3.fromRGB(255, 215, 0) -- Gold
+                    highlight.FillTransparency = 0.3
+                    highlight.OutlineColor = Color3.fromRGB(255, 255, 0)
+                    highlight.OutlineTransparency = 0
+                    highlight.Parent = k
+
+                    -- Create billboard
+                    local billboard = Instance.new("BillboardGui")
+                    billboard.Name = "GunESPIndicator"
+                    billboard.Adornee = k
+                    billboard.Size = UDim2.new(6, 0, 2, 0)
+                    billboard.AlwaysOnTop = true
+                    billboard.StudsOffset = Vector3.new(0, 3, 0)
+                    billboard.Parent = k
+
+                    local label = Instance.new("TextLabel")
+                    label.Text = "🔫 GUN"
+                    label.Size = UDim2.new(1, 0, 1, 0)
+                    label.BackgroundTransparency = 1
+                    label.TextColor3 = Color3.fromRGB(255, 215, 0)
+                    label.TextStrokeColor3 = Color3.fromRGB(0, 0, 0)
+                    label.TextStrokeTransparency = 0
+                    label.Font = Enum.Font.SourceSansBold
+                    label.TextScaled = true
+                    label.Parent = billboard
+
+                    return
+                end
+            end
+        end
+    end)
+end
+
+-- Main ESP loop
+task.spawn(function()
+    while task.wait(0.25) do
+        task.spawn(function()
+            -- Update player ESP
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer then
+                    task.spawn(function()
+                        updatePlayerESP(player)
+                    end)
+                end
+            end
+
+            -- Update gun ESP
+            task.spawn(function()
+                createGunESP()
+            end)
+        end)
+    end
+end)
+
+-- Handle new players
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function()
+        task.wait(0.5)
+        if esp_toggle then
+            createHighlight(player)
+            createHealthIndicator(player)
+        end
+    end)
+end)
+
+-- Handle player respawns
+for _, player in pairs(Players:GetPlayers()) do
+    if player ~= LocalPlayer then
+        player.CharacterAdded:Connect(function()
+            task.wait(0.5)
+            if esp_toggle then
+                createHighlight(player)
+                createHealthIndicator(player)
+            end
+        end)
+    end
+end
 
 
 --// flinging stuff
@@ -254,10 +536,60 @@ local FlySlider = PlayerTab:NewSlider(
 )
 
 
+--// VISUALS TAB
+local VisualsTab = Init:NewTab("Visuals")
+local VisualsSec1 = VisualsTab:NewSection("ESP")
+
+local ESPToggle = VisualsTab:NewToggle("ESP Toggle", false, function(value)
+    esp_toggle = value
+    local vers = value and "on" or "off"
+    Notif:Notify("Toggled ESP: " .. vers, 5, "information")
+    
+    -- If turning off, clean up all ESP
+    if not value then
+        for _, player in pairs(Players:GetPlayers()) do
+            if player ~= LocalPlayer and player.Character then
+                local highlight = player.Character:FindFirstChild("ESPHighlight")
+                if highlight then
+                    highlight:Destroy()
+                end
+                local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local healthIndicator = hrp:FindFirstChild("HealthIndicator")
+                    if healthIndicator then
+                        healthIndicator:Destroy()
+                    end
+                end
+            end
+        end
+    end
+end)
+
+local GunESPToggle = VisualsTab:NewToggle("Gun ESP Toggle", false, function(value)
+    gun_esp_toggle = value
+    local vers = value and "on" or "off"
+    Notif:Notify("Toggled Gun ESP: " .. vers, 5, "information")
+    
+    -- If turning off, clean up gun ESP
+    if not value then
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj.Name == "GunESPHighlight" or obj.Name == "GunESPIndicator" then
+                obj:Destroy()
+            end
+        end
+    else
+        createGunESP()
+    end
+end)
+
+local VisualsInfo = VisualsTab:NewSection("ESP Colors")
+local ColorInfo = VisualsTab:NewLabel("White = Innocent")
+local ColorInfo2 = VisualsTab:NewLabel("Red = Murderer")
+local ColorInfo3 = VisualsTab:NewLabel("Blue = Sheriff")
+local ColorInfo4 = VisualsTab:NewLabel("Gold = Gun Drop")
 
 
-
-
+--// MM2 TAB
 local MM2Tab = Init:NewTab("MM2")
 local MM2Sec1 = MM2Tab:NewSection("Roles")
 
@@ -289,7 +621,7 @@ local CheckMurd = MM2Tab:NewButton("Check murder", function()
             Duration = 5
         })
         if announce == true then
-            send_msg("The sherrif is: "..murdererPlayer.Name)
+            send_msg("The murderer is: "..murdererPlayer.Name)
         end
     end
 end)
@@ -362,6 +694,24 @@ local GunTPButton = MM2Tab:NewButton("Teleport to Gun", function()
     end)
 end)
 
+local gunDrop = false
+local GunAnnounce = MM2Tab:NewToggle("notify on gun drop", false, function(value)
+    local vers = value and "on" or "off"
+    gunDrop = value
+end)
+
+
+-- Helper function to check if player is R15
+local function r15(plr)
+    if plr.Character then
+        if plr.Character:FindFirstChild("Humanoid") then
+            if plr.Character.Humanoid.RigType == Enum.HumanoidRigType.R15 then
+                return true
+            end
+        end
+    end
+    return false
+end
 
 local TargetTab = Init:NewTab("Target")
 local TargetSec1 = TargetTab:NewSection("Input")
@@ -489,6 +839,688 @@ local FlingTarget = TargetTab:NewButton("Fling target", function()
     end)
 end)
 
+-- Troll commands section
+local TargetSec3 = TargetTab:NewSection("Troll Commands")
+
+-- Bang toggle
+getgenv().banging = false
+getgenv().before_bang = nil
+getgenv().bang = nil
+
+local BangToggle = TargetTab:NewToggle("Bang", false, function(value)
+    if value then
+        -- Start bang
+        if currentTarget == "" then
+            Notif:Notify("No target set", 5, "warning")
+            return
+        end
+
+        local resolvedPlayers = GetPlayer(currentTarget)
+        if not resolvedPlayers or #resolvedPlayers == 0 then
+            Notif:Notify("Target not found", 5, "warning")
+            return
+        end
+
+        local targetName = resolvedPlayers[1]
+        if not Players:FindFirstChild(targetName) then
+            Notif:Notify("Target player not available", 5, "warning")
+            return
+        end
+
+        task.spawn(function()
+            if getgenv().bang then
+                getgenv().bang:Stop()
+            end
+            
+            if getgenv().banging == true then
+                getgenv().banging = false
+                if getgenv().before_bang then
+                    LocalPlayer.Character.HumanoidRootPart.CFrame = getgenv().before_bang * CFrame.new(0,2,0)
+                end
+                task.wait(0.4)
+            end
+            
+            task.wait(0.1)
+            
+            getgenv().banging = true
+            getgenv().before_bang = LocalPlayer.Character.HumanoidRootPart.CFrame
+            tweento(Players[targetName].Character.HumanoidRootPart.CFrame)
+            task.wait(0.2)
+            
+            local bang_z = 1.1
+            local dir = 1
+        
+            
+            while getgenv().banging == true do 
+                task.wait()
+                if dir == 1 then
+                    bang_z += 0.3
+                else 
+                    bang_z -= 0.3
+                end 
+                if bang_z > 4 then
+                    dir = -1
+                elseif bang_z < 1 then
+                    dir = 1 
+                end
+                
+                task.spawn(function()
+                    if not Players:FindFirstChild(targetName) or not Players[targetName].Character then
+                        getgenv().banging = false
+                        return
+                    end
+                    
+                    LocalPlayer.Character.HumanoidRootPart.CFrame = Players[targetName].Character.HumanoidRootPart.CFrame * CFrame.new(0,0,bang_z)
+                    
+                    if not LocalPlayer.Character.Humanoid:FindFirstChild("dolphin") then
+                        local humanoid = LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid")
+                        local bangAnim = Instance.new("Animation")
+                        bangAnim.AnimationId = not r15(LocalPlayer) and "rbxassetid://148840371" or "rbxassetid://5918726674"
+                        bangAnim.Name = "dolphin"
+                        bangAnim.Parent = LocalPlayer.Character.Humanoid
+                        getgenv().bang = humanoid:LoadAnimation(bangAnim)
+                        getgenv().bang:Play(0.1, 1, 1)
+                        getgenv().bang:AdjustSpeed(3)
+                        humanoid.Died:Connect(function()
+                            getgenv().bang:Stop()
+                            bangAnim:Destroy()
+                        end)
+                    end
+                end)
+            end
+            
+            for i = 1,5 do
+                task.wait(0.05)
+                LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0,0,0)
+                if getgenv().before_bang then
+                    LocalPlayer.Character.HumanoidRootPart.CFrame = getgenv().before_bang
+                end
+            end
+            LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0,0,0)
+            task.wait(0.1)
+            LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0,0,0)
+            if getgenv().before_bang then
+                LocalPlayer.Character.HumanoidRootPart.CFrame = getgenv().before_bang * CFrame.new(0,2,0)
+            end
+        end)
+    else
+        -- Stop bang
+        getgenv().banging = false
+        if getgenv().bang then
+            getgenv().bang:Stop()
+        end
+    end
+end)
+
+-- Bend toggle
+getgenv().bending = false
+getgenv().before_bend = nil
+getgenv().bend = nil
+
+local BendToggle = TargetTab:NewToggle("Bend", false, function(value)
+    if value then
+        -- Start bend
+        if currentTarget == "" then
+            Notif:Notify("No target set", 5, "warning")
+            return
+        end
+
+        local resolvedPlayers = GetPlayer(currentTarget)
+        if not resolvedPlayers or #resolvedPlayers == 0 then
+            Notif:Notify("Target not found", 5, "warning")
+            return
+        end
+
+        local targetName = resolvedPlayers[1]
+        if not Players:FindFirstChild(targetName) then
+            Notif:Notify("Target player not available", 5, "warning")
+            return
+        end
+
+        task.spawn(function()
+            if getgenv().bend then
+                getgenv().bend:Stop()
+            end
+            
+            if getgenv().bending == true then
+                getgenv().bending = false
+                if getgenv().before_bend then
+                    LocalPlayer.Character.HumanoidRootPart.CFrame = getgenv().before_bend * CFrame.new(0,2,0)
+                end
+                task.wait(0.4)
+            end
+            
+            task.wait(0.1)
+            
+            getgenv().bending = true
+            getgenv().before_bend = LocalPlayer.Character.HumanoidRootPart.CFrame
+            tweento(Players[targetName].Character.HumanoidRootPart.CFrame)
+            task.wait(0.2)
+            
+            local bang_z = 1.1
+            local dir = 1
+            
+            local anim = Instance.new("Animation")
+            anim.AnimationId = "rbxassetid://10714360343"
+            
+            while getgenv().bending == true do 
+                task.wait()
+                if dir == 1 then
+                    bang_z -= 0.1
+                else 
+                    bang_z += 0.1
+                end 
+                if bang_z < -3 then
+                    dir = -1
+                elseif bang_z > -1.5 then
+                    dir = 1 
+                end
+                
+                task.spawn(function()
+                    if not Players:FindFirstChild(targetName) or not Players[targetName].Character then
+                        getgenv().bending = false
+                        return
+                    end
+                    
+                    if LocalPlayer.Character:FindFirstChild("Animate") then
+                        LocalPlayer.Character:FindFirstChild("Animate").PlayEmote:Invoke(anim)
+                    end
+                    
+                    local lowerTorso = Players[targetName].Character:FindFirstChild("LowerTorso")
+                    if lowerTorso then
+                        LocalPlayer.Character.HumanoidRootPart.CFrame = lowerTorso.CFrame * CFrame.new(0,0.5,bang_z)
+                    end
+                    
+                    if not LocalPlayer.Character.Humanoid:FindFirstChild("bend") then
+                        local humanoid = LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid")
+                        local bendAnim = Instance.new("Animation")
+                        bendAnim.AnimationId = "rbxassetid://10714360343"
+                        bendAnim.Name = "bend"
+                        bendAnim.Parent = LocalPlayer.Character.Humanoid
+                        getgenv().bend = humanoid:LoadAnimation(bendAnim)
+                        getgenv().bend:Play(0.1, 1, 1)
+                        getgenv().bend:AdjustSpeed(1)
+                        getgenv().bend.Priority = Enum.AnimationPriority.Action4
+                        humanoid.Died:Connect(function()
+                            getgenv().bend:Stop()
+                            bendAnim:Destroy()
+                        end)
+                    end
+                end)
+            end
+            
+            for i = 1,5 do
+                task.wait(0.05)
+                LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0,0,0)
+                if getgenv().before_bend then
+                    LocalPlayer.Character.HumanoidRootPart.CFrame = getgenv().before_bend
+                end
+            end
+            LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0,0,0)
+            task.wait(0.1)
+            LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0,0,0)
+            if getgenv().before_bend then
+                LocalPlayer.Character.HumanoidRootPart.CFrame = getgenv().before_bend * CFrame.new(0,2,0)
+            end
+        end)
+    else
+        -- Stop bend
+        getgenv().bending = false
+        if getgenv().bend then
+            getgenv().bend:Stop()
+        end
+    end
+end)
+
+-- Mount toggle
+getgenv().mounting = false
+getgenv().before_mount = nil
+
+local MountToggle = TargetTab:NewToggle("Mount", false, function(value)
+    if value then
+        -- Start mount
+        if currentTarget == "" then
+            Notif:Notify("No target set", 5, "warning")
+            return
+        end
+
+        local resolvedPlayers = GetPlayer(currentTarget)
+        if not resolvedPlayers or #resolvedPlayers == 0 then
+            Notif:Notify("Target not found", 5, "warning")
+            return
+        end
+
+        local targetName = resolvedPlayers[1]
+        if not Players:FindFirstChild(targetName) then
+            Notif:Notify("Target player not available", 5, "warning")
+            return
+        end
+
+        task.spawn(function()
+            if getgenv().mounting == true then
+                getgenv().mounting = false
+                if getgenv().before_mount then
+                    LocalPlayer.Character.HumanoidRootPart.CFrame = getgenv().before_mount * CFrame.new(0,2,0)
+                end
+                task.wait(0.4)
+            end
+            
+            task.wait(0.1)
+            getgenv().mounting = true
+            getgenv().before_mount = LocalPlayer.Character.HumanoidRootPart.CFrame
+            
+            local offset = 1.5
+            local dir = 1
+            
+            while task.wait() and getgenv().mounting == true and Players:FindFirstChild(targetName) do
+                if offset > 2 then
+                    dir = -1
+                elseif offset < 1.5 then
+                    dir = 1
+                end
+                offset = offset + (0.1*dir)
+                
+                task.spawn(function()
+                    if not Players:FindFirstChild(targetName) or not Players[targetName].Character then
+                        getgenv().mounting = false
+                        return
+                    end
+                    
+                    LocalPlayer.Character.Humanoid.Sit = true
+                    LocalPlayer.Character.HumanoidRootPart.CFrame = Players[targetName].Character.Head.CFrame * CFrame.Angles(0, math.rad(180), 0) * CFrame.new(0, 1, offset)
+                end)
+            end
+            
+            if not Players:FindFirstChild(targetName) then
+                getgenv().mounting = false
+            end
+            
+            task.wait()
+            LocalPlayer.Character.Humanoid.Sit = false
+            LocalPlayer.Character.Humanoid.Jump = true
+            
+            for i = 1,5 do
+                task.wait(0.05)
+                LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0,0,0)
+                if getgenv().before_mount then
+                    LocalPlayer.Character.HumanoidRootPart.CFrame = getgenv().before_mount
+                end
+            end
+            LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0,0,0)
+            task.wait(0.1)
+            LocalPlayer.Character.HumanoidRootPart.Velocity = Vector3.new(0,0,0)
+            if getgenv().before_mount then
+                LocalPlayer.Character.HumanoidRootPart.CFrame = getgenv().before_mount * CFrame.new(0,2,0)
+            end
+        end)
+    else
+        -- Stop mount
+        getgenv().mounting = false
+    end
+end)
+
+
+--// ANIMATIONS TAB
+local AnimationsTab = Init:NewTab("Animations")
+local DancesSec = AnimationsTab:NewSection("Dances")
+
+-- Dance IDs
+local dance_ids = {
+    "rbxassetid://136490740599725",
+    "rbxassetid://121966805049108",
+    "rbxassetid://129764254213842",
+    "rbxassetid://93086419490844",
+    "rbxassetid://76099554484027",
+    "rbxassetid://127118661424463"
+}
+
+-- Initialize dance variables
+getgenv().rand_dance = nil
+getgenv().twerk = nil
+getgenv().griddy = nil
+getgenv().gangnam = nil
+getgenv().unemployment = nil
+getgenv().carson = nil
+getgenv().caremel = nil
+getgenv().jerking = false
+
+-- Animation speed variable
+local animation_speed = 1
+
+-- Function to stop all dances
+local function stop_dances()
+    if getgenv().rand_dance then
+        getgenv().rand_dance:Stop()
+        getgenv().rand_dance = nil
+    end
+    if getgenv().twerk then
+        getgenv().twerk:Stop()
+        getgenv().twerk = nil
+    end
+    if getgenv().griddy then
+        getgenv().griddy:Stop()
+        getgenv().griddy = nil
+    end
+    if getgenv().gangnam then
+        getgenv().gangnam:Stop()
+        getgenv().gangnam = nil
+    end
+    if getgenv().unemployment then
+        getgenv().unemployment:Stop()
+        getgenv().unemployment = nil
+    end
+    if getgenv().carson then
+        getgenv().carson:Stop()
+        getgenv().carson = nil
+    end
+    if getgenv().caremel then
+        getgenv().caremel:Stop()
+        getgenv().caremel = nil
+    end
+    getgenv().jerking = false
+end
+
+-- Function to update animation speed for all active dances
+local function updateAnimationSpeed(speed)
+    if getgenv().rand_dance then
+        getgenv().rand_dance:AdjustSpeed(speed)
+    end
+    if getgenv().twerk then
+        getgenv().twerk:AdjustSpeed(speed)
+    end
+    if getgenv().griddy then
+        getgenv().griddy:AdjustSpeed(speed)
+    end
+    if getgenv().gangnam then
+        getgenv().gangnam:AdjustSpeed(speed)
+    end
+    if getgenv().unemployment then
+        getgenv().unemployment:AdjustSpeed(speed)
+    end
+    if getgenv().carson then
+        getgenv().carson:AdjustSpeed(speed)
+    end
+    if getgenv().caremel then
+        getgenv().caremel:AdjustSpeed(speed)
+    end
+end
+
+-- Animation Speed Slider
+local AnimSpeedSlider = AnimationsTab:NewSlider(
+    "Animation speed",
+    "",
+    true,
+    "x",
+    { min = 0, max = 5, default = 1 },
+    function(value)
+        animation_speed = value
+        updateAnimationSpeed(value)
+    end
+)
+
+-- Random Dance Button
+local RandomDance = AnimationsTab:NewButton("Random Dance", function()
+    stop_dances()
+    local animation = Instance.new("Animation")
+    animation.AnimationId = dance_ids[math.random(1, #dance_ids)]
+    getgenv().rand_dance = LocalPlayer.Character.Humanoid:LoadAnimation(animation)
+    getgenv().rand_dance.Looped = true
+    getgenv().rand_dance.Priority = Enum.AnimationPriority.Action4
+    getgenv().rand_dance:Play()
+    getgenv().rand_dance:AdjustSpeed(animation_speed)
+    Notif:Notify("Playing random dance", 3, "information")
+end)
+
+-- Dance 1 - Shake
+local Dance1 = AnimationsTab:NewButton("Dance 1 - Shake", function()
+    stop_dances()
+    local animation = Instance.new("Animation")
+    animation.AnimationId = "rbxassetid://136490740599725"
+    getgenv().twerk = LocalPlayer.Character.Humanoid:LoadAnimation(animation)
+    getgenv().twerk.Looped = true
+    getgenv().twerk.Priority = Enum.AnimationPriority.Action4
+    getgenv().twerk:Play()
+    getgenv().twerk:AdjustSpeed(animation_speed)
+    Notif:Notify("Playing Shake dance", 3, "information")
+end)
+
+-- Dance 2 - Griddy
+local Dance2 = AnimationsTab:NewButton("Dance 2 - Griddy", function()
+    stop_dances()
+    local animation = Instance.new("Animation")
+    animation.AnimationId = "rbxassetid://121966805049108"
+    getgenv().griddy = LocalPlayer.Character.Humanoid:LoadAnimation(animation)
+    getgenv().griddy.Looped = true
+    getgenv().griddy.Priority = Enum.AnimationPriority.Action4
+    getgenv().griddy:Play()
+    getgenv().griddy:AdjustSpeed(animation_speed)
+    Notif:Notify("Playing Griddy dance", 3, "information")
+end)
+
+-- Dance 3 - Gangnam
+local Dance3 = AnimationsTab:NewButton("Dance 3 - Gangnam", function()
+    stop_dances()
+    local animation = Instance.new("Animation")
+    animation.AnimationId = "rbxassetid://129764254213842"
+    getgenv().gangnam = LocalPlayer.Character.Humanoid:LoadAnimation(animation)
+    getgenv().gangnam.Looped = true
+    getgenv().gangnam.Priority = Enum.AnimationPriority.Action4
+    getgenv().gangnam:Play()
+    getgenv().gangnam:AdjustSpeed(animation_speed)
+    Notif:Notify("Playing Gangnam Style", 3, "information")
+end)
+
+-- Dance 4 - Unemployment
+local Dance4 = AnimationsTab:NewButton("Dance 4 - Unemployment", function()
+    stop_dances()
+    local animation = Instance.new("Animation")
+    animation.AnimationId = "rbxassetid://93086419490844"
+    getgenv().unemployment = LocalPlayer.Character.Humanoid:LoadAnimation(animation)
+    getgenv().unemployment.Looped = true
+    getgenv().unemployment.Priority = Enum.AnimationPriority.Action4
+    getgenv().unemployment:Play()
+    getgenv().unemployment:AdjustSpeed(animation_speed)
+    Notif:Notify("Playing Unemployment dance", 3, "information")
+end)
+
+-- Dance 5 - Carson
+local Dance5 = AnimationsTab:NewButton("Dance 5 - Carson", function()
+    stop_dances()
+    local animation = Instance.new("Animation")
+    animation.AnimationId = "rbxassetid://76099554484027"
+    getgenv().carson = LocalPlayer.Character.Humanoid:LoadAnimation(animation)
+    getgenv().carson.Looped = true
+    getgenv().carson.Priority = Enum.AnimationPriority.Action4
+    getgenv().carson:Play()
+    getgenv().carson:AdjustSpeed(animation_speed)
+    Notif:Notify("Playing Carson dance", 3, "information")
+end)
+
+-- Dance 6 - Caremel
+local Dance6 = AnimationsTab:NewButton("Dance 6 - Caremel", function()
+    stop_dances()
+    local animation = Instance.new("Animation")
+    animation.AnimationId = "rbxassetid://127118661424463"
+    getgenv().caremel = LocalPlayer.Character.Humanoid:LoadAnimation(animation)
+    getgenv().caremel.Looped = true
+    getgenv().caremel.Priority = Enum.AnimationPriority.Action4
+    getgenv().caremel:Play()
+    getgenv().caremel:AdjustSpeed(animation_speed)
+    Notif:Notify("Playing Caremel dance", 3, "information")
+end)
+
+-- Jerk Toggle
+local JerkToggle = AnimationsTab:NewToggle("Jerk", false, function(value)
+    if value then
+        getgenv().jerking = true
+        task.spawn(function()
+            local track
+            while task.wait() and getgenv().jerking == true do
+                if getgenv().jerking == true then
+                    local isR15 = r15(LocalPlayer)
+                    if not track then
+                        local anim = Instance.new("Animation")
+                        anim.AnimationId = not isR15 and "rbxassetid://72042024" or "rbxassetid://698251653"
+                        track = LocalPlayer.Character.Humanoid:LoadAnimation(anim)
+                    end
+                    
+                    track:Play()
+                    track:AdjustSpeed(0.5 * animation_speed)
+                    track.TimePosition = 0.6
+                    task.wait(0.1)
+                    while track and track.TimePosition < (0.7) do task.wait(0.1) end
+                    if track then
+                        track:Stop()
+                        track = nil
+                    end
+                end
+            end
+        end)
+        Notif:Notify("Jerk animation started", 3, "information")
+    else
+        getgenv().jerking = false
+        Notif:Notify("Jerk animation stopped", 3, "information")
+    end
+end)
+
+-- Stop All Button
+local StopAll = AnimationsTab:NewButton("Stop All Animations", function()
+    stop_dances()
+    Notif:Notify("All animations stopped", 3, "success")
+end)
+
+-- Spelling Section
+local SpellingSec = AnimationsTab:NewSection("Spelling")
+
+-- Initialize spelling variables
+getgenv().spelling = false
+getgenv().letter_spell = {}
+
+local spell_text = ""
+
+-- Textbox for spelling input
+local SpellInput = AnimationsTab:NewTextbox("Text to spell", "", "1", "all", "small", true, false, function(val)
+    spell_text = val:lower()
+end)
+
+-- Letter animation IDs
+local letters = {
+    ["a"] = "rbxassetid://138338789917579",
+    ["b"] = "rbxassetid://83774225211894",
+    ["c"] = "rbxassetid://102706636381416",
+    ["d"] = "rbxassetid://119432455866325",
+    ["e"] = "rbxassetid://71682979802728",
+    ["f"] = "rbxassetid://135227259060683",
+    ["g"] = "rbxassetid://135257394807798",
+    ["h"] = "rbxassetid://128894072580927",
+    ["i"] = "rbxassetid://114137878243453",
+    ["j"] = "rbxassetid://110276817462232",
+    ["k"] = "rbxassetid://120953677535193",
+    ["l"] = "rbxassetid://128492197469048",
+    ["m"] = "rbxassetid://98288662279156",
+    ["n"] = "rbxassetid://82503474144449",
+    ["o"] = "rbxassetid://101641887378951",
+    ["p"] = "rbxassetid://101283801577322",
+    ["q"] = "rbxassetid://70764209868433",
+    ["r"] = "rbxassetid://134446396997637",
+    ["s"] = "rbxassetid://122443734972375",
+    ["t"] = "rbxassetid://105838262954463",
+    ["u"] = "rbxassetid://135824595429758",
+    ["v"] = "rbxassetid://119340476183690",
+    ["w"] = "rbxassetid://126908006538812",
+    ["x"] = "rbxassetid://83068327805565", 
+    ["y"] = "rbxassetid://121054460098923", 
+    ["z"] = "rbxassetid://137589447206293",
+    [" "] = "rbxassetid://73904913705133",
+}
+
+-- Start Spelling Button
+local StartSpelling = AnimationsTab:NewButton("Start Spelling", function()
+    if spell_text == "" then
+        Notif:Notify("Please enter text to spell", 3, "warning")
+        return
+    end
+    
+    if getgenv().spelling == true then
+        Notif:Notify("Already spelling a word", 3, "warning")
+        return
+    end
+    
+    task.spawn(function()
+        local word = spell_text
+        local time_per_letter = 0.8
+        local charList = string.split(word, "")
+        
+        -- Check if all characters are valid
+        for _, char in ipairs(charList) do
+            if not letters[char] then
+                Notif:Notify("Unable to spell that word - invalid character: " .. char, 3, "error")
+                return
+            end
+        end
+        
+        getgenv().spelling = true
+        Notif:Notify("Started spelling: " .. word, 3, "information")
+        
+        for _, char in ipairs(charList) do
+            if not getgenv().spelling then
+                break
+            end
+            
+            local assetid = letters[char]
+            
+            task.spawn(function()
+                local animation = Instance.new("Animation")
+                animation.AnimationId = assetid
+                
+                local humanoid = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+                if not humanoid then return end
+                
+                local track = humanoid:LoadAnimation(animation)
+                track.Looped = false
+                track.Priority = Enum.AnimationPriority.Action
+                
+                track:Play()
+                task.wait() -- ensure Length is available
+                
+                if track.Length > 0 then
+                    track.TimePosition = track.Length * 0.99
+                end
+                
+                track:AdjustSpeed(0) -- pause at ~99%
+                
+                table.insert(getgenv().letter_spell, track)
+            end)
+            
+            task.wait(time_per_letter)
+            
+            for _, track in ipairs(getgenv().letter_spell) do
+                track:Stop()
+                track:Destroy()
+            end
+            table.clear(getgenv().letter_spell)
+            
+            task.wait(0.1)
+        end
+        
+        getgenv().spelling = false
+        Notif:Notify("Finished spelling!", 3, "success")
+    end)
+end)
+
+-- Stop Spelling Button
+local StopSpelling = AnimationsTab:NewButton("Stop Spelling", function()
+    getgenv().spelling = false
+    
+    for _, track in ipairs(getgenv().letter_spell) do
+        track:Stop()
+        track:Destroy()
+    end
+    table.clear(getgenv().letter_spell)
+    
+    Notif:Notify("Spelling stopped", 3, "information")
+end)
+
 
 --// menu tab
 local MenuTab = Init:NewTab("Menu")
@@ -509,10 +1541,36 @@ local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 
+local wasGunDropped = false
+
 
 RunService.Heartbeat:Connect(function(dt)
     local character = LocalPlayer.Character
     if not character then return end
+
+
+    if gunDrop == true then
+        local gunDropped = false
+        local gunCFrame = nil
+
+        for _, v in pairs(workspace:GetChildren()) do
+            for _, k in pairs(v:GetChildren()) do
+                if k.Name == "GunDrop" then
+                    gunDropped = true
+                    gunCFrame = k.CFrame
+                    break
+                end
+            end
+            if gunDropped and wasGunDropped == false then 
+                wasGunDropped = true
+                Notif:Notify("Gun has been dropped", 5, "success")
+            elseif not gunDropped then
+                wasGunDropped = false
+            end
+        end
+    else
+        wasGunDropped = false
+    end
 
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     local root = character:FindFirstChild("HumanoidRootPart")
