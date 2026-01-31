@@ -1,0 +1,575 @@
+local library = loadstring(game:HttpGet("https://gist.githubusercontent.com/jimbohimbo233-crypto/016004c95ab9a84c6f7472f809ebed90/raw/a8795bd9abb5da0c5d29e69203ff294666481248/uiuiuiui%25202"))()
+
+
+library.rank = "dev"
+local Wm = library:Watermark("turfyware v1 | ".. "rank: " .. library.rank)
+local FpsWm = Wm:AddWatermark("fps: " .. library.fps)
+coroutine.wrap(function()
+    while wait(.5) do
+        FpsWm:Text("fps: " .. library.fps)
+    end
+end)()
+
+local Notif = library:InitNotifications()
+local LoadingXSX = Notif:Notify("Loading turfyware, please be patient.", 5, "information") 
+library.title = "turfyware - v1.0"
+
+library:Introduction()
+wait(0.8)
+local Init = library:Init()
+
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local LocalPlayer = Players.LocalPlayer
+local TweenService = game:GetService("TweenService")
+
+local fly_toggle = false
+local fly_speed = 60
+
+
+local function tweento(targetCFrame)
+	local player = LocalPlayer
+	local character = player.Character or player.CharacterAdded:Wait()
+	local hrp = character:WaitForChild("HumanoidRootPart")
+	local currentCFrame = hrp.CFrame
+	local distance = (currentCFrame.Position - targetCFrame.Position).Magnitude
+	local speed = 50
+	local tweenInfo = TweenInfo.new(
+		0.3,
+		Enum.EasingStyle.Quad,
+		Enum.EasingDirection.Out
+	)
+	local goal = {
+		CFrame = targetCFrame
+	}
+	local tween = TweenService:Create(hrp, tweenInfo, goal)
+	tween:Play()
+end
+
+local function tweento_slow(targetCFrame)
+	local player = LocalPlayer
+	local character = player.Character or player.CharacterAdded:Wait()
+	local hrp = character:WaitForChild("HumanoidRootPart")
+	local currentCFrame = hrp.CFrame
+	local distance = (currentCFrame.Position - targetCFrame.Position).Magnitude
+	local speed = 50
+	local tweenInfo = TweenInfo.new(
+		0.9,
+		Enum.EasingStyle.Quad,
+		Enum.EasingDirection.Out
+	)
+	local goal = {
+		CFrame = targetCFrame
+	}
+	local tween = TweenService:Create(hrp, tweenInfo, goal)
+	tween:Play()
+end
+
+local function GetPlayer(input)
+    local found = {}
+    local strl = input:lower()
+    local players = game.Players:GetPlayers()
+    local localPlayer = game.Players.LocalPlayer
+
+    -- RANDOM PLAYER
+    if strl == "random" then
+        local totalPlayers = #players
+        local randomizedIndex = math.random(1, totalPlayers)
+
+        local candidate = players[randomizedIndex]
+        if candidate == localPlayer then
+            candidate = players[randomizedIndex + 1] or players[1]
+        end
+
+        if candidate ~= localPlayer then
+            table.insert(found, candidate.Name)
+        end
+
+    -- MURDERER
+    elseif strl == "murder" or strl == "murderer" then
+        local murderer = "na"
+
+        for _, player in pairs(players) do
+            local backpack = player.Backpack
+            local character = player.Character
+
+            if (backpack and backpack:FindFirstChild("Knife")) or 
+               (character and character:FindFirstChild("Knife")) then
+                murderer = player.Name
+                break
+            end
+        end
+
+        if murderer ~= "na" then
+            table.insert(found, murderer)
+        end
+
+    -- SHERIFF
+    elseif strl == "sherrif" then
+        local sheriff = "na"
+
+        for _, player in pairs(players) do
+            local backpack = player.Backpack
+            local character = player.Character
+
+            if (backpack and backpack:FindFirstChild("Gun")) or 
+               (character and character:FindFirstChild("Gun")) then
+                sheriff = player.Name
+                break
+            end
+        end
+
+        if sheriff ~= "na" then
+            table.insert(found, sheriff)
+        end
+
+    -- PARTIAL NAME MATCH
+    else
+        for _, player in ipairs(players) do
+            if player.Name:lower():sub(1, #input) == strl or
+               player.DisplayName:lower():sub(1, #input) == strl then
+                table.insert(found, player.Name)
+                break -- only first match
+            end
+        end
+    end
+
+    return found
+end
+
+
+local function checkMurd()
+    local murderer = "MURDERER NOT FOUND"
+
+    for _, p in pairs(game.Players:GetPlayers()) do
+        local backpack = p.Backpack
+        local character = p.Character
+
+        if (backpack and backpack:FindFirstChild("Knife")) or (character and character:FindFirstChild("Knife")) then
+            murderer = p.Name
+            break -- stop after finding the murderer
+        end
+    end
+
+    return murderer
+end
+
+local function checkSherrif()
+    local sheriff = "SHERRIF NOT FOUND"
+    local gunDropped = false
+    local gunPos = nil
+
+    -- Check players for Gun
+    for _, p in pairs(game.Players:GetPlayers()) do
+        local backpack = p.Backpack
+        local character = p.Character
+
+        if (backpack and backpack:FindFirstChild("Gun")) or (character and character:FindFirstChild("Gun")) then
+            sheriff = p.Name
+            break -- stop after finding sheriff
+        end
+    end
+
+    -- Check if gun is dropped in workspace
+    for _, v in pairs(workspace:GetChildren()) do
+        for _, k in pairs(v:GetChildren()) do
+            if k.Name == "GunDrop" then
+                gunDropped = true
+                gunPos = k.CFrame
+                break
+            end
+        end
+        if gunDropped then break end
+    end
+
+    if gunDropped then
+        return "The gun is currently dropped at: " .. tostring(gunPos)
+    else
+        return sheriff
+    end
+end
+
+
+
+--// flinging stuff
+
+local flinging_toggle = false
+local flinging_target = false
+
+local PlayerTab = Init:NewTab("Player")
+local FlingSec1 = PlayerTab:NewSection("Fling")
+
+local FlingToggle = PlayerTab:NewToggle("Fling", false, function(value)
+    local vers = value and "on" or "off"
+    flinging_toggle = value
+    Notif:Notify("Toggled fling: "..vers, 5, "information") 
+end):AddKeybind(Enum.KeyCode.X)
+
+local SpeedSec1 = PlayerTab:NewSection("Speed")
+
+local WalkSpeed = 16
+local speed_toggle = false
+
+local SpeedToggle = PlayerTab:NewToggle("Speed", false, function(value)
+    local vers = value and "on" or "off"
+    speed_toggle = value
+    Notif:Notify("Toggled speed: "..vers, 5, "information") 
+end):AddKeybind(Enum.KeyCode.V)
+
+
+
+local SpeedSlider = PlayerTab:NewSlider("Speed value", "", true, "/", {min = 1, max = 100, default = 16}, function(value)
+    WalkSpeed = value
+end)
+
+local OtherSec1 = PlayerTab:NewSection("Other")
+local noclip_toggle = false
+
+local NoclipToggle = PlayerTab:NewToggle("Noclip", false, function(value)
+    noclip_toggle = value
+    local vers = value and "on" or "off"
+    Notif:Notify("Toggled noclip: " .. vers, 5, "information")
+end):AddKeybind(Enum.KeyCode.C)
+
+local FlyToggle = PlayerTab:NewToggle("Fly", false, function(value)
+    fly_toggle = value
+    local vers = value and "on" or "off"
+    Notif:Notify("Toggled fly: " .. vers, 5, "information")
+end):AddKeybind(Enum.KeyCode.Q)
+
+local FlySlider = PlayerTab:NewSlider(
+    "Fly speed",
+    "",
+    true,
+    "/",
+    { min = 10, max = 150, default = 60 },
+    function(value)
+        fly_speed = value
+    end
+)
+
+
+
+
+
+
+local MM2Tab = Init:NewTab("MM2")
+local MM2Sec1 = MM2Tab:NewSection("Roles")
+
+local function getPlayerThumbnail(player)
+    local thumbType = Enum.ThumbnailType.HeadShot
+    local thumbSize = Enum.ThumbnailSize.Size48x48
+    local content, isReady = Players:GetUserThumbnailAsync(player.UserId, thumbType, thumbSize)
+    return content
+end
+
+local function send_msg(msg)
+    game:GetService("TextChatService").TextChannels.RBXGeneral:SendAsync(msg)
+end
+
+local announce = false
+
+-- Button: Check Murderer
+local CheckMurd = MM2Tab:NewButton("Check murder", function()
+    local murdererName = checkMurd()
+    
+    Notif:Notify("Murderer: " .. murdererName, 5, "information")
+
+    local murdererPlayer = Players:FindFirstChild(murdererName)
+    if murdererPlayer then
+        StarterGui:SetCore("SendNotification", {
+            Title = "Murderer Found",
+            Text = murdererPlayer.Name,
+            Icon = getPlayerThumbnail(murdererPlayer),
+            Duration = 5
+        })
+        if announce == true then
+            send_msg("The sherrif is: "..murdererPlayer.Name)
+        end
+    end
+end)
+
+-- Button: Check Sheriff
+local CheckSherrif = MM2Tab:NewButton("Check sherrif", function()
+    local sheriffInfo = checkSherrif()
+    
+    Notif:Notify("Sheriff: " .. sheriffInfo, 5, "information")
+
+    local sheriffPlayer = Players:FindFirstChild(sheriffInfo)
+    if sheriffPlayer then
+        StarterGui:SetCore("SendNotification", {
+            Title = "Sheriff Found",
+            Text = sheriffPlayer.Name,
+            Icon = getPlayerThumbnail(sheriffPlayer),
+            Duration = 5
+        })
+        if announce == true then
+            send_msg("The sherrif is: "..sheriffPlayer.Name)
+        end
+    end
+end)
+
+local announceToggle = MM2Tab:NewToggle("announce in chat", false, function(value)
+    local vers = value and "on" or "off"
+    announce = value
+end)
+
+local GunTab = MM2Tab:NewSection("Gun")
+
+local GunTPButton = MM2Tab:NewButton("Teleport to Gun", function()
+    task.spawn(function()
+        Notif:Notify("Checking for gun...", 3, "information")
+
+        local gunDropped = false
+        local gunCFrame = nil
+
+        -- Check workspace for GunDrop
+        for _, v in pairs(workspace:GetChildren()) do
+            for _, k in pairs(v:GetChildren()) do
+                if k.Name == "GunDrop" then
+                    gunDropped = true
+                    gunCFrame = k.CFrame
+                    break
+                end
+            end
+            if gunDropped then break end
+        end
+
+        if not gunDropped then
+            Notif:Notify("Gun is not currently dropped", 3, "warning")
+            return
+        end
+
+        Notif:Notify("Gun found, teleporting...", 3, "information")
+
+        -- Tween player to gun over 0.25s
+        for i = 1, 5 do
+            tweento(gunCFrame)
+            task.wait(0.05)
+        end
+
+        task.wait(0.5)
+
+        -- Slow approach to gun
+        tweento_slow(gunCFrame * CFrame.new(0, 0.1, 0))
+
+        Notif:Notify("Arrived at gun!", 3, "success")
+    end)
+end)
+
+
+local TargetTab = Init:NewTab("Target")
+local TargetSec1 = TargetTab:NewSection("Input")
+
+local currentTarget = ""
+
+-- Textbox for custom target
+local TargetInput = TargetTab:NewTextbox("Target", "", "1", "all", "small", true, false, function(val)
+    currentTarget = val
+end)
+
+-- Button: Set target to murderer
+local SetMurderTarget = TargetTab:NewButton("Set target as murd", function()
+    local murder = GetPlayer("murder")[1] -- use your GetPlayer function
+    if murder then
+        currentTarget = murder
+        Notif:Notify("Target set to murderer: " .. murder, 5, "information")
+    else
+        Notif:Notify("Murderer not found", 5, "warning")
+    end
+end)
+
+-- Button: Set target to sheriff
+local SetSheriffTarget = TargetTab:NewButton("Set target as sherrif", function()
+    local sheriff = GetPlayer("sherrif")[1]
+    if sheriff then
+        currentTarget = sheriff
+        Notif:Notify("Target set to sheriff: " .. sheriff, 5, "information")
+    else
+        Notif:Notify("Sheriff not found", 5, "warning")
+    end
+end)
+
+local TargetSec2 = TargetTab:NewSection("Target Actions")
+
+local Goto = TargetTab:NewButton("Goto target", function()
+    if currentTarget == "" then
+        Notif:Notify("No target set", 5, "warning")
+        return
+    end
+
+    local resolvedPlayers = GetPlayer(currentTarget)
+    if not resolvedPlayers or #resolvedPlayers == 0 then
+        Notif:Notify("Target not found", 5, "warning")
+        return
+    end
+
+    local targetName = resolvedPlayers[1]
+    local targetPlayer = Players:FindFirstChild(targetName)
+    if not targetPlayer or not targetPlayer.Character or not targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        Notif:Notify("Target player not available", 5, "warning")
+        return
+    end
+
+    local targetRoot = targetPlayer.Character.HumanoidRootPart
+    Notif:Notify("Teleporting to target: " .. targetPlayer.Name, 5, "information")
+
+    -- Smooth tween to target using existing tweento / tweento_slow
+    for i = 1, 5 do
+        tweento(targetRoot.CFrame)
+        task.wait(0.05)
+    end
+end)
+
+local function getVelocity(part)
+    return part.AssemblyLinearVelocity or part.Velocity
+end
+
+local FlingTarget = TargetTab:NewButton("Fling target", function()
+    if currentTarget == "" then
+        Notif:Notify("No target set", 5, "warning")
+        return
+    end
+
+    local resolvedPlayers = GetPlayer(currentTarget)
+    if not resolvedPlayers or #resolvedPlayers == 0 then
+        Notif:Notify("Target not found", 5, "warning")
+        return
+    end
+
+    local targetName = resolvedPlayers[1]
+    local targetPlayer = Players:FindFirstChild(targetName)
+    if not targetPlayer or not targetPlayer.Character or not targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        Notif:Notify("Target player not available", 5, "warning")
+        return
+    end
+
+    Notif:Notify("Flinging target: " .. targetPlayer.Name, 5, "information")
+
+    task.spawn(function()
+        flinging_target = true
+        local before_fling = LocalPlayer.Character.HumanoidRootPart.CFrame
+        local twen = tweento(targetPlayer.Character.HumanoidRootPart.CFrame)
+        task.wait(0.3)
+        
+        local wa = 0
+        task.spawn(function()
+            while flinging_target == true do
+                game:GetService("RunService").RenderStepped:Wait()
+                wa += 1
+                if wa == 2 then
+                    task.spawn(function()
+                        local t_vel_ = getVelocity(targetPlayer.Character.HumanoidRootPart)
+                        local t_vel = Vector3.new(t_vel_.X/32, 0, t_vel_.Z/32)
+                        if targetPlayer.Character.HumanoidRootPart.Velocity.Magnitude <= 1 then
+                            t_vel = Vector3.new(0, 0, 0)
+                        end
+                        local c_x = ((t_vel.X * math.random(4, 11)) + math.random(-1, 1)) * 2
+                        local c_z = ((t_vel.Z * math.random(4, 11)) + math.random(-1, 1)) * 2
+                        LocalPlayer.Character.HumanoidRootPart.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame * CFrame.Angles(math.random(1, 180), math.random(1, 180), math.random(1, 180)) + Vector3.new(c_x, math.random(-1, 1), c_z)
+                    end)
+                    wa = 0
+                end
+            end
+        end)
+        
+        task.wait(4)
+        flinging_target = false
+        
+        -- Teleport back to original position
+        tweento(before_fling)
+        wait(0.1)
+        tweento(before_fling)
+        Notif:Notify("Fling complete, returned to original position", 5, "success")
+    end)
+end)
+
+
+--// menu tab
+local MenuTab = Init:NewTab("Menu")
+local MenuSec1 = MenuTab:NewSection("Menu")
+
+local MenuToggle = MenuTab:NewKeybind("Toggle UI", Enum.KeyCode.Clear, function(key)
+    Init:UpdateKeybind(Enum.KeyCode[key])
+end)
+
+
+
+
+
+
+--actual flinging
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+
+local LocalPlayer = Players.LocalPlayer
+
+
+RunService.Heartbeat:Connect(function(dt)
+    local character = LocalPlayer.Character
+    if not character then return end
+
+    local humanoid = character:FindFirstChildOfClass("Humanoid")
+    local root = character:FindFirstChild("HumanoidRootPart")
+    if not humanoid or not root then return end
+
+    -- speed
+    humanoid.WalkSpeed = speed_toggle and WalkSpeed or 16
+
+    -- noclip
+    if noclip_toggle then
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                part.CanCollide = false
+            end
+        end
+    end
+
+    -- flight (CFrame, hover when idle)
+    if fly_toggle then
+
+        local camCF = workspace.CurrentCamera.CFrame
+        local moveDir = Vector3.zero
+
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then
+            moveDir += camCF.LookVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then
+            moveDir -= camCF.LookVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then
+            moveDir -= camCF.RightVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then
+            moveDir += camCF.RightVector
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then
+            moveDir += Vector3.yAxis
+        end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+            moveDir -= Vector3.yAxis
+        end
+
+        if moveDir.Magnitude > 0 then
+            root.CFrame += moveDir.Unit * fly_speed * dt
+        end
+
+        -- hover: zero physics drift
+        root.AssemblyLinearVelocity = Vector3.zero
+        root.AssemblyAngularVelocity = Vector3.zero
+    end
+
+    -- fling (unchanged)
+    if not (flinging_toggle or flinging_target) then return end
+
+    local originalVelocity = root.Velocity
+    root.Velocity = Vector3.new(-30000, -40000, -30000)
+
+    RunService.RenderStepped:Wait()
+    if root.Parent then root.Velocity = originalVelocity end
+end)
