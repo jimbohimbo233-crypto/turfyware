@@ -216,6 +216,10 @@ local function getPlayerRole(player)
     return "innocent"
 end
 
+local function send_msg(msg)
+    game:GetService("TextChatService").TextChannels.RBXGeneral:SendAsync(msg)
+end
+
 
 --// ESP SYSTEM
 
@@ -598,10 +602,6 @@ local function getPlayerThumbnail(player)
     local thumbSize = Enum.ThumbnailSize.Size48x48
     local content, isReady = Players:GetUserThumbnailAsync(player.UserId, thumbType, thumbSize)
     return content
-end
-
-local function send_msg(msg)
-    game:GetService("TextChatService").TextChannels.RBXGeneral:SendAsync(msg)
 end
 
 local announce = false
@@ -1522,6 +1522,57 @@ local StopSpelling = AnimationsTab:NewButton("Stop Spelling", function()
 end)
 
 
+--// TROLLING TAB
+local TrollingTab = Init:NewTab("Trolling")
+local FakeMsgSec = TrollingTab:NewSection("Fake MSG")
+
+local fake_msg_target = ""
+local fake_msg_message = ""
+
+-- Target textbox
+local FakeMsgTarget = TrollingTab:NewTextbox("Target", "", "1", "all", "small", true, false, function(val)
+    fake_msg_target = val
+end)
+
+-- Message textbox
+local FakeMsgMessage = TrollingTab:NewTextbox("Message", "", "1", "all", "small", true, false, function(val)
+    fake_msg_message = val
+end)
+
+-- Send button
+local SendFakeMsg = TrollingTab:NewButton("copy MSG to clipboard", function()
+    if fake_msg_target == "" then
+        Notif:Notify("Please enter a target", 3, "warning")
+        return
+    end
+    
+    if fake_msg_message == "" then
+        Notif:Notify("Please enter a message", 3, "warning")
+        return
+    end
+    
+    local resolvedPlayers = GetPlayer(fake_msg_target)
+    if not resolvedPlayers or #resolvedPlayers == 0 then
+        Notif:Notify("Target not found", 3, "warning")
+        return
+    end
+    
+    local targetName = resolvedPlayers[1]
+    local targetPlayer = Players:FindFirstChild(targetName)
+    
+    if not targetPlayer then
+        Notif:Notify("Target player not available", 3, "warning")
+        return
+    end
+    
+    -- Send the fake message
+    local fake_message = "################################ " .. targetPlayer.Name .. ": " .. fake_msg_message
+    setclipboard(fake_message)
+    
+    Notif:Notify("Fake message sent as " .. targetPlayer.Name, 3, "success")
+end)
+
+
 --// menu tab
 local MenuTab = Init:NewTab("Menu")
 local MenuSec1 = MenuTab:NewSection("Menu")
@@ -1541,7 +1592,7 @@ local RunService = game:GetService("RunService")
 
 local LocalPlayer = Players.LocalPlayer
 
-local wasGunDropped = false
+getgenv().wasGunDropped = false
 
 
 RunService.Heartbeat:Connect(function(dt)
@@ -1561,15 +1612,15 @@ RunService.Heartbeat:Connect(function(dt)
                     break
                 end
             end
-            if gunDropped and wasGunDropped == false then 
-                wasGunDropped = true
+            if gunDropped and getgenv().wasGunDropped == false then 
+                getgenv().wasGunDropped = true
                 Notif:Notify("Gun has been dropped", 5, "success")
-            elseif not gunDropped then
-                wasGunDropped = false
+            elseif gunDropped == false then
+                getgenv().wasGunDropped = false
             end
         end
     else
-        wasGunDropped = false
+        getgenv().wasGunDropped = false
     end
 
     local humanoid = character:FindFirstChildOfClass("Humanoid")
