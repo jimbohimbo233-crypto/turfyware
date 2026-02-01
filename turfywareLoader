@@ -217,7 +217,32 @@ local function getPlayerRole(player)
 end
 
 local function send_msg(msg)
-    game:GetService("TextChatService").TextChannels.RBXGeneral:SendAsync(msg)
+    local TextChatService = game:GetService("TextChatService")
+    
+    -- Try to find an available TextChannel
+    local success = pcall(function()
+        if TextChatService.CreateDefaultTextChannels then
+            -- Default channel exists
+            TextChatService.TextChannels.RBXGeneral:SendAsync(msg)
+        else
+            -- Find the first available TextChannel
+            local channels = TextChatService:WaitForChild("TextChannels")
+            local channel = channels:FindFirstChildOfClass("TextChannel")
+            if channel then
+                channel:SendAsync(msg)
+            else
+                -- Fallback to legacy chat
+                game:GetService("ReplicatedStorage").DefaultChatSystemChatEvents.SayMessageRequest:FireServer(msg, "All")
+            end
+        end
+    end)
+    
+    -- If everything fails, try legacy chat as final fallback
+    if not success then
+        pcall(function()
+            game:GetService("ReplicatedStorage").DefaultChatSystemChatEvents.SayMessageRequest:FireServer(msg, "All")
+        end)
+    end
 end
 
 
@@ -774,6 +799,63 @@ local Goto = TargetTab:NewButton("Goto target", function()
         tweento(targetRoot.CFrame)
         task.wait(0.05)
     end
+end)
+
+-- Upboost function
+getgenv().up_boost = false
+getgenv().before_uboost = nil
+
+local UpboostTarget = TargetTab:NewButton("Upboost target", function()
+    if currentTarget == "" then
+        Notif:Notify("No target set", 5, "warning")
+        return
+    end
+
+    if getgenv().up_boost == true then
+        Notif:Notify("Already boosting someone", 5, "warning")
+        return
+    end
+
+    local resolvedPlayers = GetPlayer(currentTarget)
+    if not resolvedPlayers or #resolvedPlayers == 0 then
+        Notif:Notify("Target not found", 5, "warning")
+        return
+    end
+
+    local targetName = resolvedPlayers[1]
+    local targetPlayer = Players:FindFirstChild(targetName)
+    if not targetPlayer or not targetPlayer.Character or not targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        Notif:Notify("Target player not available", 5, "warning")
+        return
+    end
+
+    if targetName == LocalPlayer.Name then
+        Notif:Notify("Cannot upboost yourself", 5, "warning")
+        return
+    end
+
+    getgenv().up_boost = true
+    Notif:Notify("Upboosting target: " .. targetPlayer.Name, 5, "information")
+
+    task.spawn(function()
+        getgenv().before_uboost = LocalPlayer.Character.HumanoidRootPart.CFrame
+        local twen = tweento(targetPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, -15, 0))
+        task.wait(0.3)
+
+        twen = tweento_slow(targetPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 7, 0))
+    end)
+
+    task.wait(2.5)
+    getgenv().up_boost = false
+    
+    -- Return to original position
+    if getgenv().before_uboost then
+        tweento(getgenv().before_uboost)
+        task.wait(0.1)
+        tweento(getgenv().before_uboost)
+    end
+    
+    Notif:Notify("Upboost complete", 5, "success")
 end)
 
 local function getVelocity(part)
@@ -1540,7 +1622,7 @@ local FakeMsgMessage = TrollingTab:NewTextbox("Message", "", "1", "all", "small"
 end)
 
 -- Send button
-local SendFakeMsg = TrollingTab:NewButton("copy MSG to clipboard", function()
+local SendFakeMsg = TrollingTab:NewButton("Send MSG", function()
     if fake_msg_target == "" then
         Notif:Notify("Please enter a target", 3, "warning")
         return
@@ -1567,11 +1649,47 @@ local SendFakeMsg = TrollingTab:NewButton("copy MSG to clipboard", function()
     
     -- Send the fake message
     local fake_message = "################################ " .. targetPlayer.Name .. ": " .. fake_msg_message
-    setclipboard(fake_message)
+    send_msg(fake_message)
     
     Notif:Notify("Fake message sent as " .. targetPlayer.Name, 3, "success")
 end)
 
+
+--// TTS
+local TTSTab = Init:NewTab("TTS")
+local TTSSec1 = TTSTab:NewSection("TTS")
+
+local TTSMessage = ""
+
+local FakeMsgMessage = TTSTab:NewTextbox("Message", "", "1", "all", "small", true, false, function(val)
+    TTSMessage = val
+end)
+
+local HttpService = game:GetService("HttpService")
+
+local WEBHOOK_URL = "https://discord.com/api/webhooks/1467265618918248468/QnYhlTmUlu1AGUM396dHvSIA-wLCkm9VY8sns6Df2H_11yPQegdRQzC63kp0_2gbPwV4"
+
+-- Sends a plain message to the webhook
+local function sendWebhookMsg(message)
+    if not message then return end
+
+    local data = {
+        content = message
+    }
+
+    request({
+        Url = WEBHOOK_URL,
+        Method = "POST",
+        Headers = {
+            ["Content-Type"] = "application/json"
+        },
+        Body = HttpService:JSONEncode(data)
+    })
+end
+
+local SendTTS = TTSTab:NewButton("Speak TTS", function()
+    sendWebhookMsg(TTSMessage)
+end)
 
 --// menu tab
 local MenuTab = Init:NewTab("Menu")
@@ -1681,4 +1799,33 @@ RunService.Heartbeat:Connect(function(dt)
 
     RunService.RenderStepped:Wait()
     if root.Parent then root.Velocity = originalVelocity end
+end)
+
+game:GetService("RunService").Heartbeat:Connect(function()
+  if getgenv().up_boost == true  then
+    
+    
+    local character = LocalPlayer.Character
+    if character then
+      
+      
+      local root = character:WaitForChild("HumanoidRootPart")
+      local vel, movel = nil, 0.1
+    
+      vel = root.Velocity
+      root.Velocity = Vector3.new(0, 500, 0)
+      
+    
+      game:GetService("RunService").RenderStepped:Wait()
+      if character and character.Parent and root and root.Parent then
+          root.Velocity = vel
+      end
+    
+      game:GetService("RunService").Stepped:Wait()
+      if character and character.Parent and root and root.Parent then
+        root.Velocity = vel + Vector3.new(0, movel, 0)
+        movel = movel * -1
+      end
+    end
+  end
 end)
