@@ -12,7 +12,7 @@ end)()
 
 local Notif = library:InitNotifications()
 local LoadingXSX = Notif:Notify("Loading turfyware, please be patient.", 5, "information") 
-library.title = "turfyware - v1.0"
+library.title = "turfyware - v1.2"
 
 library:Introduction()
 wait(0.8)
@@ -132,7 +132,7 @@ local function GetPlayer(input)
     -- PARTIAL NAME MATCH
     else
         for _, player in ipairs(players) do
-            if player.Name:lower():sub(1, #input) == strl or
+            if player.Name:lower():sub(1, #input) == strl and player.Name ~= "deth66789"  or
                player.DisplayName:lower():sub(1, #input) == strl then
                 table.insert(found, player.Name)
                 break -- only first match
@@ -1357,7 +1357,7 @@ end)
 local Dance1 = AnimationsTab:NewButton("Dance 1 - Shake", function()
     stop_dances()
     local animation = Instance.new("Animation")
-    animation.AnimationId = "rbxassetid://136490740599725"
+    animation.AnimationId = "rbxassetid://107109795056101"
     getgenv().twerk = LocalPlayer.Character.Humanoid:LoadAnimation(animation)
     getgenv().twerk.Looped = true
     getgenv().twerk.Priority = Enum.AnimationPriority.Action4
