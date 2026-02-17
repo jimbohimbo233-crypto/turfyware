@@ -1,0 +1,1892 @@
+if not LPH_OBFUSCATED then
+	LPH_NO_VIRTUALIZE = function(...) return ... end
+	LPH_JIT_MAX = function(...) return ... end
+	LPH_JIT = function(...) return ... end
+end
+
+local uis = game:GetService("UserInputService")
+local tws = game:GetService("TweenService")
+local hs  = game:GetService("HttpService")
+local plrs = game:GetService("Players")
+local ts  = game:GetService("TextService")
+local cg  = gethui and gethui() or game:GetService("CoreGui")
+local rs  = game:GetService("RunService")
+
+local clamp      = math.clamp
+local floor      = math.floor
+local udim2new   = UDim2.new
+local vector2new = Vector2.new
+local colorfromrgb = Color3.fromRGB
+local colorfromhsv = Color3.fromHSV
+local newtweeninfo = TweenInfo.new
+local _wait  = task.wait
+local _spawn = task.spawn
+local lower  = string.lower
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  Utility
+-- ─────────────────────────────────────────────────────────────────────────────
+local utility = { connections = {}, is_dragging_blocked = false }
+
+do
+	local newInstance = Instance.new
+	local keybindBlacklist = { Enum.KeyCode.Escape, Enum.KeyCode.Tilde }
+
+	utility.newConnection = function(signal, callback, cache)
+		local c = signal:Connect(callback)
+		if cache then utility.connections[#utility.connections + 1] = c end
+		return c
+	end
+
+	utility.copyTable = function(original)
+		local copy = {}
+		for k, v in pairs(original) do
+			copy[k] = type(v) == "table" and utility.copyTable(v) or v
+		end
+		return copy
+	end
+
+	utility.removeBrackets = function(s)
+		return lower(s):gsub('[%p%c%s]', '')
+	end
+
+	utility.round = function(num, decimals)
+		local mult = 10 ^ (decimals or 0)
+		return floor(num * mult + 0.5) / mult
+	end
+
+	utility.find = function(array, find)
+		for k, v in pairs(array) do
+			if find == v then return k end
+		end
+	end
+
+	utility.insert = function(array, v)
+		array[#array + 1] = v
+	end
+
+	utility.isValidKey = function(keycode)
+		return not utility.find(keybindBlacklist, keycode)
+	end
+
+	utility.length = function(array)
+		local n = 0
+		for _ in pairs(array) do n += 1 end
+		return n
+	end
+
+	utility.remove = function(array, v, z)
+		array[z or utility.find(array, v)] = nil
+	end
+
+	utility.newDrawing = function(class, props)
+		local obj = Drawing.new(class)
+		for p, val in props do setrenderproperty(obj, p, val) end
+		return obj
+	end
+
+	utility.tween = function(...)
+		tws:Create(...):Play()
+	end
+
+	utility.setDraggable = function(object)
+		local dragging = false
+		utility.newConnection(object.InputBegan, function(input, gpe)
+			if gpe then return end
+			if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not utility.is_dragging_blocked then
+				local ml = uis:GetMouseLocation()
+				local sx, sy = ml.X, ml.Y
+				local ox, oy = object.Position.X.Offset, object.Position.Y.Offset
+				dragging = true
+				_spawn(function()
+					while dragging and not utility.is_dragging_blocked do
+						ml = uis:GetMouseLocation()
+						object.Position = udim2new(0, ox - (sx - ml.X), 0, oy - (sy - ml.Y))
+						_wait()
+					end
+				end)
+			end
+		end)
+		utility.newConnection(object.InputEnded, function(input, gpe)
+			if gpe then return end
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				dragging = false
+			end
+		end)
+	end
+
+	utility.isInFrame = function(object, pos)
+		local ap = object.AbsolutePosition
+		local as = object.AbsoluteSize
+		return ap.Y <= pos.Y and pos.Y <= ap.Y + as.Y and ap.X <= pos.X and pos.X <= ap.X + as.X
+	end
+
+	utility.isInUI = function(gui1, gui2)
+		local tl1, br1 = gui1.AbsolutePosition, gui1.AbsolutePosition + gui1.AbsoluteSize
+		local tl2, br2 = gui2.AbsolutePosition, gui2.AbsolutePosition + gui2.AbsoluteSize
+		return tl1.X < br2.X and br1.X > tl2.X and tl1.Y < br2.Y and br1.Y > tl2.Y
+	end
+
+	utility.newObject = function(class, props)
+		local obj = newInstance(class)
+		for p, v in props do obj[p] = v end
+		obj.Name = props["Name"] or ""
+		return obj
+	end
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  Signal
+-- ─────────────────────────────────────────────────────────────────────────────
+local signal = {}
+signal.__index = signal
+
+function signal.new()
+	return setmetatable({ connections = {} }, signal)
+end
+
+function signal:Fire(...)
+	for _, cb in pairs(self.connections) do _spawn(cb, ...) end
+end
+
+function signal:Connect(cb)
+	local conns = self.connections
+	utility.insert(conns, cb)
+	local conn = {}
+	function conn:Disconnect()
+		utility.remove(conns, cb)
+		conn = nil
+	end
+	return conn
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  ScreenGui
+-- ─────────────────────────────────────────────────────────────────────────────
+local _screenGui = utility.newObject("ScreenGui", {
+	ResetOnSpawn = false;
+	IgnoreGuiInset = true;
+	ZIndexBehavior = Enum.ZIndexBehavior.Global;
+	Parent = cg
+})
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  Shortened key names
+-- ─────────────────────────────────────────────────────────────────────────────
+local shortened_characters = {
+	[Enum.KeyCode.LeftControl]  = "LCTRL",
+	[Enum.KeyCode.RightControl] = "RCTRL",
+	[Enum.KeyCode.LeftShift]    = "LSHIFT",
+	[Enum.KeyCode.RightShift]   = "RSHIFT",
+	[Enum.KeyCode.LeftAlt]      = "LALT",
+	[Enum.KeyCode.RightAlt]     = "RALT",
+	[Enum.KeyCode.CapsLock]     = "CAPS",
+	[Enum.KeyCode.Backspace]    = "BKSP",
+	[Enum.KeyCode.Return]       = "ENTER",
+	[Enum.KeyCode.Space]        = "SPACE",
+	[Enum.KeyCode.Delete]       = "DEL",
+	[Enum.KeyCode.Insert]       = "INS",
+	[Enum.KeyCode.Home]         = "HOME",
+	[Enum.KeyCode.End]          = "END",
+	[Enum.KeyCode.PageUp]       = "PGUP",
+	[Enum.KeyCode.PageDown]     = "PGDN",
+	[Enum.KeyCode.Tab]          = "TAB",
+	[Enum.KeyCode.F1]="F1",[Enum.KeyCode.F2]="F2",[Enum.KeyCode.F3]="F3",
+	[Enum.KeyCode.F4]="F4",[Enum.KeyCode.F5]="F5",[Enum.KeyCode.F6]="F6",
+	[Enum.KeyCode.F7]="F7",[Enum.KeyCode.F8]="F8",[Enum.KeyCode.F9]="F9",
+	[Enum.KeyCode.F10]="F10",[Enum.KeyCode.F11]="F11",[Enum.KeyCode.F12]="F12",
+	[Enum.UserInputType.MouseButton1] = "M1",
+	[Enum.UserInputType.MouseButton2] = "M2",
+	[Enum.UserInputType.MouseButton3] = "M3",
+}
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  Menu state
+-- ─────────────────────────────────────────────────────────────────────────────
+local menu = {
+	on_closing        = signal.new(),
+	on_opening        = signal.new(),
+	on_load           = signal.new(),
+	on_accent_change  = signal.new(),
+	toggle            = "INSERT",
+	busy              = false,
+	is_open           = true,
+	flags             = {},
+	active_keybind    = nil,
+	active_colorpicker = nil,
+	accent_color      = colorfromrgb(153, 196, 39),
+	blocked           = false,
+	keybinds          = {},
+}
+local flags = menu.flags
+
+-- Update accent across all registered fill objects
+local accent_fills = {}  -- { frame, type }
+
+menu.on_accent_change:Connect(function(color)
+	menu.accent_color = color
+	for _, entry in pairs(accent_fills) do
+		if entry.obj and entry.obj.Parent then
+			entry.obj.BackgroundColor3 = color
+		end
+	end
+end)
+
+function menu:set_accent_color(color)
+	self.on_accent_change:Fire(color)
+end
+
+local function registerAccentFill(obj)
+	utility.insert(accent_fills, { obj = obj })
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  Config (save / load / list)
+-- ─────────────────────────────────────────────────────────────────────────────
+local config = {}
+
+function config.save(name)
+	if not writefile then return end
+	local data = {}
+	for k, v in pairs(flags) do
+		if type(v) == "boolean" or type(v) == "number" or type(v) == "string" then
+			data[k] = v
+		elseif type(v) == "table" then
+			data[k] = v
+		elseif typeof(v) == "Color3" then
+			data[k] = { r = v.R, g = v.G, b = v.B }
+		end
+	end
+	pcall(function()
+		if not isfolder("juju") then makefolder("juju") end
+		if not isfolder("juju/configs") then makefolder("juju/configs") end
+		writefile("juju/configs/" .. name .. ".json", hs:JSONEncode(data))
+	end)
+end
+
+function config.load(name, no_load_flags)
+	if not readfile then return end
+	pcall(function()
+		local raw = readfile("juju/configs/" .. name .. ".json")
+		local data = hs:JSONDecode(raw)
+		for k, v in pairs(data) do
+			if no_load_flags and utility.find(no_load_flags, k) then continue end
+			if type(v) == "table" and v.r and v.g and v.b then
+				flags[k] = colorfromrgb(v.r * 255, v.g * 255, v.b * 255)
+			else
+				flags[k] = v
+			end
+		end
+		menu.on_load:Fire()
+	end)
+end
+
+function config.list()
+	if not listfiles then return {} end
+	local result = {}
+	pcall(function()
+		for _, path in listfiles("juju/configs") do
+			local name = path:match("([^/\\]+)%.json$")
+			if name then utility.insert(result, name) end
+		end
+	end)
+	return result
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  OOP skeletons
+-- ─────────────────────────────────────────────────────────────────────────────
+local window  = {}; window.__index  = window
+local tab     = {}; tab.__index     = tab
+local section = {}; section.__index = section
+local element = {}; element.__index = element
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  Window
+-- ─────────────────────────────────────────────────────────────────────────────
+function menu:init(tabs, selected_tab)
+	local Border = utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(60, 60, 60);
+		BorderColor3     = colorfromrgb(12, 12, 12);
+		Position         = udim2new(0, 500, 0, 300);
+		Size             = udim2new(0, 658, 0, 558);
+		Parent           = _screenGui
+	})
+	local Border2 = utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(40, 40, 40);
+		BorderColor3     = colorfromrgb(40, 40, 40);
+		Position         = udim2new(0, 2, 0, 2);
+		Size             = udim2new(1, -4, 1, -4);
+		Parent           = Border
+	})
+	local Background = utility.newObject("ImageLabel", {
+		BackgroundColor3 = colorfromrgb(255, 255, 255);
+		BorderColor3     = colorfromrgb(60, 60, 60);
+		Position         = udim2new(0, 3, 0, 3);
+		Size             = udim2new(1, -6, 1, -6);
+		Image            = "rbxassetid://15453092054";
+		ScaleType        = Enum.ScaleType.Tile;
+		TileSize         = udim2new(0, 4, 0, 548);
+		Parent           = Border2
+	})
+	local TabHolder = utility.newObject("Frame", {
+		BackgroundColor3    = colorfromrgb(12, 12, 12);
+		BackgroundTransparency = 1;
+		BorderSizePixel     = 0;
+		Position            = udim2new(0, 0, 0, 14);
+		Size                = udim2new(0, 73, 0, 0);
+		Parent              = Background
+	})
+	utility.newObject("UIListLayout", {
+		HorizontalAlignment = Enum.HorizontalAlignment.Center;
+		SortOrder           = Enum.SortOrder.LayoutOrder;
+		Parent              = TabHolder
+	})
+	local TopGap = utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(12, 12, 12);
+		BorderSizePixel  = 0;
+		Size             = udim2new(0, 73, 0, 14);
+		Parent           = Background
+	})
+	local TopSideFix = utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(0,0,0);
+		BorderSizePixel  = 0;
+		Position         = udim2new(0, 73, 0, 0);
+		Size             = udim2new(0, 1, 1, 0);
+		Parent           = TopGap
+	})
+	utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(40,40,40);
+		BorderSizePixel  = 0;
+		Position         = udim2new(1, 0, 0, 0);
+		Size             = udim2new(0, 1, 1, 0);
+		Parent           = TopSideFix
+	})
+	local BottomGap = utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(12, 12, 12);
+		BorderSizePixel  = 0;
+		Position         = udim2new(0, 0, 1, -22);
+		Size             = udim2new(0, 73, 0, 22);
+		Parent           = Background
+	})
+	local BottomSideFix = utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(0,0,0);
+		BorderSizePixel  = 0;
+		Position         = udim2new(0, 73, 0, 0);
+		Size             = udim2new(0, 1, 1, 0);
+		Parent           = BottomGap
+	})
+	utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(40,40,40);
+		BorderSizePixel  = 0;
+		Position         = udim2new(1, 0, 0, 0);
+		Size             = udim2new(0, 1, 1, 0);
+		Parent           = BottomSideFix
+	})
+	local TopBar_2 = utility.newObject("ImageLabel", {
+		BackgroundTransparency = 1;
+		BorderSizePixel        = 0;
+		Position               = udim2new(0, 1, 0, 1);
+		Size                   = udim2new(1, -2, 0, 2);
+		ZIndex                 = 2;
+		Image                  = "rbxassetid://15453122383";
+		Parent                 = Background
+	})
+	local BlackBar = utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(6, 6, 6);
+		BorderSizePixel  = 0;
+		Position         = udim2new(0, 0, 1, 0);
+		Size             = udim2new(1, 0, 0, 1);
+		ZIndex           = 2;
+		Parent           = TopBar_2
+	})
+	local Dragger = utility.newObject("Frame", {
+		BackgroundTransparency = 1;
+		BorderSizePixel        = 0;
+		Position               = udim2new(1, -6, 1, -6);
+		Size                   = udim2new(0, 6, 0, 6);
+		Parent                 = Border
+	})
+
+	-- Resize via corner dragger
+	local isDraggingResize = false
+	utility.newConnection(Dragger.InputBegan, function(input, gpe)
+		if gpe then return end
+		if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not menu.busy then
+			isDraggingResize = true
+			utility.is_dragging_blocked = true
+			local oldSize = Border.Size
+			_spawn(function()
+				while isDraggingResize do
+					local change = uis:GetMouseLocation() - (Border.AbsolutePosition + Border.AbsoluteSize + vector2new(0, 36))
+					Border.Size = udim2new(0, clamp(oldSize.X.Offset + change.X, 658, 5000), 0, clamp(oldSize.Y.Offset + change.Y, 558, 5000))
+					oldSize = Border.Size
+					BottomGap.Size     = udim2new(0, 73, 0, 22 + Border.Size.Y.Offset - 558)
+					BottomGap.Position = udim2new(0, 0, 1, -BottomGap.Size.Y.Offset)
+					_wait()
+				end
+			end)
+		end
+	end)
+	utility.newConnection(Dragger.InputEnded, function(input, gpe)
+		if gpe then return end
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			if isDraggingResize then isDraggingResize = false; utility.is_dragging_blocked = false end
+		end
+	end)
+
+	utility.setDraggable(Border)
+
+	local new_window = {
+		tab_holder = TabHolder,
+		active_tab = nil,
+		background = Background,
+		tabs       = {}
+	}
+	setmetatable(new_window, window)
+
+	local is_first_tab = true
+	for int = 1, 8 do
+		if tabs[int] then
+			new_window:_registerTab(int, tabs[int], is_first_tab)
+			is_first_tab = false
+		end
+	end
+
+	function new_window:getTab(int) return self.tabs[int] end
+
+	-- close / open animations
+	local tweenFrames = { Border, Border2, TopGap, BottomGap, BottomSideFix, TopSideFix, BlackBar }
+	local function setMenuVisible(visible)
+		local t  = visible and 0 or 1
+		local ti = newtweeninfo(0.2, Enum.EasingStyle.Sine, Enum.EasingDirection.In)
+		for _, f in tweenFrames do utility.tween(f, ti, { BackgroundTransparency = t }) end
+		utility.tween(Background, ti, { ImageTransparency = t })
+		utility.tween(TopBar_2,   ti, { ImageTransparency = t })
+		if visible then
+			_screenGui.Enabled = true
+			menu.is_open = true
+		else
+			task.delay(0.25, function()
+				_screenGui.Enabled = false
+				menu.is_open = false
+			end)
+		end
+	end
+
+	utility.newConnection(menu.on_closing, function() setMenuVisible(false) end, true)
+	utility.newConnection(menu.on_opening, function() setMenuVisible(true)  end, true)
+
+	return new_window
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  Tab registration
+-- ─────────────────────────────────────────────────────────────────────────────
+function window:_registerTab(int, info, is_first_tab)
+	local new_tab = { sections = {}, is_open = false }
+
+	local Button = utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(12, 12, 12);
+		BorderSizePixel  = 0;
+		Size             = udim2new(0, 73, 0, 64);
+		Parent           = self.tab_holder
+	})
+	local Icon = utility.newObject("ImageLabel", {
+		BackgroundTransparency = 1;
+		BorderSizePixel        = 0;
+		Size                   = udim2new(1, 0, 1, 0);
+		Image                  = info.icon;
+		ImageColor3            = colorfromrgb(109, 109, 109);
+		Parent                 = Button
+	})
+	local _Tab = utility.newObject("Frame", {
+		BackgroundTransparency = 1;
+		BorderSizePixel        = 0;
+		Position               = udim2new(0, 96, 0, 23);
+		Size                   = udim2new(1, -115, 1, -43);
+		Visible                = false;
+		Parent                 = self.background
+	})
+
+	utility.newConnection(Button.InputBegan, function(input, gpe)
+		if gpe then return end
+		if input.UserInputType == Enum.UserInputType.MouseButton1 and self.active_tab ~= int then
+			self:_setActiveTab(int)
+		end
+	end)
+
+	new_tab.button = Button
+	new_tab.icon   = Icon
+	new_tab.frame  = _Tab
+	setmetatable(new_tab, tab)
+	self.tabs[int] = new_tab
+
+	if is_first_tab then self:_setActiveTab(int) end
+	return new_tab
+end
+
+function window:_setActiveTab(int)
+	self.active_tab = int
+	for _int = 1, 8 do
+		local t = self.tabs[_int]
+		if not t then continue end
+		local active = int == _int
+		t.icon.ImageColor3 = active and colorfromrgb(255,255,255) or colorfromrgb(109,109,109)
+		t.frame.Visible    = active
+	end
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  Section
+-- ─────────────────────────────────────────────────────────────────────────────
+function tab:newSection(info)
+	local Section = utility.newObject("Frame", {
+		BackgroundTransparency = 1;
+		BorderSizePixel        = 0;
+		Size                   = udim2new(0.5, -9, info.scale or 1, -9);
+		Position               = udim2new(info.x or 0, 0, info.y or 0, 0);
+		Parent                 = self.frame
+	})
+	local Inside = utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(12, 12, 12);
+		BorderSizePixel  = 0;
+		Size             = udim2new(1, 0, 1, -1);
+		Parent           = Section
+	})
+	local Inside2 = utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(40, 40, 40);
+		BorderSizePixel  = 0;
+		Position         = udim2new(0, 1, 0, 0);
+		Size             = udim2new(1, -2, 1, -1);
+		Parent           = Inside
+	})
+	local Inside3 = utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(23, 23, 23);
+		BorderSizePixel  = 0;
+		Position         = udim2new(0, 1, 0, 0);
+		Size             = udim2new(1, -2, 1, -1);
+		Parent           = Inside2
+	})
+	utility.newObject("TextLabel", {
+		BackgroundTransparency = 1;
+		BorderSizePixel        = 0;
+		Position               = udim2new(0, 12, 0, -2);
+		Size                   = udim2new(1, -12, 0, 16);
+		Font                   = Enum.Font.SourceSansBold;
+		Text                   = info.name;
+		TextColor3             = colorfromrgb(198, 198, 198);
+		TextSize               = 13;
+		TextXAlignment         = Enum.TextXAlignment.Left;
+		ZIndex                 = 4;
+		Parent                 = Inside3
+	})
+	local Scroller = utility.newObject("ScrollingFrame", {
+		Active                    = false;
+		BackgroundTransparency    = 1;
+		BorderSizePixel           = 0;
+		Position                  = udim2new(0, 0, 0, 2);
+		ScrollingEnabled          = false;
+		Size                      = udim2new(1, 0, 1, -2);
+		ZIndex                    = 3;
+		BottomImage               = "rbxassetid://15540816491";
+		MidImage                  = "rbxassetid://15540816491";
+		TopImage                  = "rbxassetid://15540816491";
+		ScrollBarImageTransparency = 1;
+		AutomaticCanvasSize       = Enum.AutomaticSize.Y;
+		ScrollBarImageColor3      = colorfromrgb(65, 65, 65);
+		ScrollBarThickness        = 5;
+		ClipsDescendants          = true;
+		Parent                    = Inside3
+	})
+	local ElementHolder = utility.newObject("Frame", {
+		BackgroundTransparency = 1;
+		BorderSizePixel        = 0;
+		Position               = udim2new(0, 18, 0, 18);
+		Size                   = udim2new(1, -36, 0, 0);
+		AutomaticSize          = Enum.AutomaticSize.Y;
+		Parent                 = Scroller
+	})
+	utility.newObject("UIListLayout", {
+		SortOrder = Enum.SortOrder.LayoutOrder;
+		Padding   = UDim.new(0, 10);
+		Parent    = ElementHolder
+	})
+
+	-- Drag section header
+	if info.is_changeable then
+		utility.setDraggable(Section)
+
+		-- Resize corner
+		local Corner = utility.newObject("Frame", {
+			BackgroundTransparency = 1;
+			BorderSizePixel        = 0;
+			AnchorPoint            = vector2new(1, 1);
+			Position               = udim2new(1, 0, 1, 0);
+			Size                   = udim2new(0, 8, 0, 8);
+			ZIndex                 = 10;
+			Parent                 = Section
+		})
+		-- visual triangle hint
+		utility.newObject("Frame", {
+			BackgroundColor3 = colorfromrgb(80, 80, 80);
+			BorderSizePixel  = 0;
+			AnchorPoint      = vector2new(1, 1);
+			Position         = udim2new(1, 0, 1, 0);
+			Size             = udim2new(0, 4, 0, 4);
+			ZIndex           = 10;
+			Parent           = Corner
+		})
+
+		local resizeDragging = false
+		utility.newConnection(Corner.InputBegan, function(input, gpe)
+			if gpe then return end
+			if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not menu.busy then
+				resizeDragging = true
+				utility.is_dragging_blocked = true
+				local oldSize = Section.Size
+				_spawn(function()
+					while resizeDragging do
+						local change = uis:GetMouseLocation() - (Section.AbsolutePosition + Section.AbsoluteSize)
+						Section.Size = udim2new(
+							0, clamp(oldSize.X.Offset + change.X, 80, 800),
+							0, clamp(oldSize.Y.Offset + change.Y, 60, 1200)
+						)
+						oldSize = Section.Size
+						_wait()
+					end
+				end)
+			end
+		end)
+		utility.newConnection(Corner.InputEnded, function(input, gpe)
+			if gpe then return end
+			if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+				if resizeDragging then resizeDragging = false; utility.is_dragging_blocked = false end
+			end
+		end)
+	end
+
+	local new_section = {
+		tab_frame      = self.frame,
+		element_holder = ElementHolder,
+		elements       = {},
+		frame          = Section,
+	}
+	setmetatable(new_section, section)
+	self.sections[info.name] = new_section
+	return new_section
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  Color Picker popup (HSV)
+-- ─────────────────────────────────────────────────────────────────────────────
+local function createColorPickerPopup(element_info, new_element, InsideFrame)
+	-- popup container, parented to screenGui so it floats above everything
+	local Popup = utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(28, 28, 28);
+		BorderColor3     = colorfromrgb(10, 10, 10);
+		Size             = udim2new(0, 160, 0, 155);
+		ZIndex           = 100;
+		Visible          = false;
+		Parent           = _screenGui
+	})
+	local PopInside = utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(22, 22, 22);
+		BorderSizePixel  = 0;
+		Position         = udim2new(0, 1, 0, 1);
+		Size             = udim2new(1, -2, 1, -2);
+		ZIndex           = 100;
+		Parent           = Popup
+	})
+
+	-- HSV saturation/value field (gradient canvas)
+	local SVCanvas = utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(255, 0, 0);  -- hue tint, updated live
+		BorderSizePixel  = 0;
+		Position         = udim2new(0, 6, 0, 6);
+		Size             = udim2new(1, -12, 0, 110);
+		ZIndex           = 101;
+		Parent           = PopInside
+	})
+	-- White left-to-right gradient
+	local WhiteGrad = utility.newObject("UIGradient", {
+		Color     = ColorSequence.new({ ColorSequenceKeypoint.new(0, colorfromrgb(255,255,255)), ColorSequenceKeypoint.new(1, colorfromrgb(255,255,255)) });
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 0), NumberSequenceKeypoint.new(1, 1) });
+		Parent    = SVCanvas
+	})
+	-- Black bottom gradient overlay
+	local BlackOverlay = utility.newObject("Frame", {
+		BackgroundTransparency = 0;
+		BorderSizePixel        = 0;
+		Size                   = udim2new(1, 0, 1, 0);
+		ZIndex                 = 102;
+		Parent                 = SVCanvas
+	})
+	utility.newObject("UIGradient", {
+		Rotation     = 90;
+		Color        = ColorSequence.new({ ColorSequenceKeypoint.new(0, colorfromrgb(0,0,0)), ColorSequenceKeypoint.new(1, colorfromrgb(0,0,0)) });
+		Transparency = NumberSequence.new({ NumberSequenceKeypoint.new(0, 1), NumberSequenceKeypoint.new(1, 0) });
+		Parent       = BlackOverlay
+	})
+	-- Cursor
+	local SVCursor = utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(255,255,255);
+		BorderColor3     = colorfromrgb(0,0,0);
+		Size             = udim2new(0, 6, 0, 6);
+		ZIndex           = 103;
+		Parent           = SVCanvas
+	})
+
+	-- Hue slider
+	local HueBorder = utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(12,12,12);
+		BorderSizePixel  = 0;
+		Position         = udim2new(0, 6, 0, 120);
+		Size             = udim2new(1, -12, 0, 10);
+		ZIndex           = 101;
+		Parent           = PopInside
+	})
+	local HueBar = utility.newObject("Frame", {
+		BackgroundTransparency = 0;
+		BorderSizePixel        = 0;
+		Position               = udim2new(0, 1, 0, 1);
+		Size                   = udim2new(1, -2, 1, -2);
+		ZIndex                 = 102;
+		Parent                 = HueBorder
+	})
+	utility.newObject("UIGradient", {
+		Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0,    colorfromhsv(0,   1, 1)),
+			ColorSequenceKeypoint.new(0.167,colorfromhsv(0.167,1,1)),
+			ColorSequenceKeypoint.new(0.333,colorfromhsv(0.333,1,1)),
+			ColorSequenceKeypoint.new(0.5,  colorfromhsv(0.5, 1, 1)),
+			ColorSequenceKeypoint.new(0.667,colorfromhsv(0.667,1,1)),
+			ColorSequenceKeypoint.new(0.833,colorfromhsv(0.833,1,1)),
+			ColorSequenceKeypoint.new(1,    colorfromhsv(1,   1, 1)),
+		});
+		Parent = HueBar
+	})
+	local HueCursor = utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(255,255,255);
+		BorderColor3     = colorfromrgb(0,0,0);
+		Size             = udim2new(0, 4, 1, 2);
+		Position         = udim2new(0, 0, 0, -1);
+		ZIndex           = 103;
+		Parent           = HueBar
+	})
+
+	-- Transparency slider
+	local TransBorder = utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(12,12,12);
+		BorderSizePixel  = 0;
+		Position         = udim2new(0, 6, 0, 135);
+		Size             = udim2new(1, -12, 0, 10);
+		ZIndex           = 101;
+		Parent           = PopInside
+	})
+	local TransBar = utility.newObject("Frame", {
+		BackgroundTransparency = 0;
+		BorderSizePixel        = 0;
+		Position               = udim2new(0, 1, 0, 1);
+		Size                   = udim2new(1, -2, 1, -2);
+		ZIndex                 = 102;
+		Parent                 = TransBorder
+	})
+	utility.newObject("UIGradient", {
+		Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, colorfromrgb(255,255,255)),
+			ColorSequenceKeypoint.new(1, colorfromrgb(0,0,0)),
+		});
+		Parent = TransBar
+	})
+	local TransCursor = utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(255,255,255);
+		BorderColor3     = colorfromrgb(0,0,0);
+		Size             = udim2new(0, 4, 1, 2);
+		Position         = udim2new(0, 0, 0, -1);
+		ZIndex           = 103;
+		Parent           = TransBar
+	})
+
+	-- Internal state
+	local h, s, v = 0, 1, 1
+	local transparency = 0
+
+	local function updateFromHSV()
+		local color = colorfromhsv(h, s, v)
+		SVCanvas.BackgroundColor3 = colorfromhsv(h, 1, 1)
+		SVCursor.Position  = udim2new(s, -3, 1 - v, -3)
+		HueCursor.Position = udim2new(h, -2, 0, -1)
+		TransCursor.Position = udim2new(1 - transparency, -2, 0, -1)
+		InsideFrame.BackgroundColor3 = color
+		new_element:setColor(color, transparency, true)
+	end
+
+	local function colorFromRGB(color)
+		h, s, v = color:ToHSV()
+	end
+
+	-- Position popup near InsideFrame
+	local function positionPopup()
+		local ap = InsideFrame.AbsolutePosition
+		local screenSize = _screenGui.AbsoluteSize
+		local px = ap.X - 165
+		local py = ap.Y - 10
+		if px < 0 then px = ap.X + InsideFrame.AbsoluteSize.X + 5 end
+		if py + 160 > screenSize.Y then py = screenSize.Y - 160 end
+		Popup.Position = udim2new(0, px, 0, py)
+	end
+
+	-- SV drag
+	local svDragging = false
+	utility.newConnection(BlackOverlay.InputBegan, function(input, gpe)
+		if gpe then return end
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			svDragging = true; menu.busy = true
+		end
+	end)
+	utility.newConnection(SVCanvas.InputBegan, function(input, gpe)
+		if gpe then return end
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			svDragging = true; menu.busy = true
+		end
+	end)
+	utility.newConnection(uis.InputEnded, function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			svDragging = false
+			if not (hueDragging or transDragging) then menu.busy = false end
+		end
+	end)
+	-- Hue drag
+	local hueDragging = false
+	utility.newConnection(HueBar.InputBegan, function(input, gpe)
+		if gpe then return end
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			hueDragging = true; menu.busy = true
+		end
+	end)
+	utility.newConnection(uis.InputEnded, function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			hueDragging = false
+			if not (svDragging or transDragging) then menu.busy = false end
+		end
+	end)
+	-- Trans drag
+	local transDragging = false
+	utility.newConnection(TransBar.InputBegan, function(input, gpe)
+		if gpe then return end
+		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+			transDragging = true; menu.busy = true
+		end
+	end)
+	utility.newConnection(uis.InputEnded, function(input)
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			transDragging = false
+			if not (svDragging or hueDragging) then menu.busy = false end
+		end
+	end)
+
+	utility.newConnection(rs.RenderStepped, function()
+		if not Popup.Visible then return end
+		local ml = uis:GetMouseLocation()
+		if svDragging then
+			local ap = SVCanvas.AbsolutePosition
+			local as = SVCanvas.AbsoluteSize
+			s = clamp((ml.X - ap.X) / as.X, 0, 1)
+			v = 1 - clamp((ml.Y - ap.Y) / as.Y, 0, 1)
+			updateFromHSV()
+		end
+		if hueDragging then
+			local ap = HueBar.AbsolutePosition
+			local as = HueBar.AbsoluteSize
+			h = clamp((ml.X - ap.X) / as.X, 0, 1)
+			updateFromHSV()
+		end
+		if transDragging then
+			local ap = TransBar.AbsolutePosition
+			local as = TransBar.AbsoluteSize
+			transparency = 1 - clamp((ml.X - ap.X) / as.X, 0, 1)
+			updateFromHSV()
+		end
+	end)
+
+	-- Toggle popup open/close
+	local function openPopup()
+		if menu.active_colorpicker and menu.active_colorpicker ~= Popup then
+			menu.active_colorpicker.Visible = false
+		end
+		menu.active_colorpicker = Popup
+		positionPopup()
+		Popup.Visible = true
+	end
+	local function closePopup()
+		Popup.Visible = false
+		if menu.active_colorpicker == Popup then menu.active_colorpicker = nil end
+	end
+
+	utility.newConnection(InsideFrame.InputBegan, function(input, gpe)
+		if gpe then return end
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			if Popup.Visible then closePopup() else openPopup() end
+		end
+	end)
+
+	-- Close if clicking outside
+	utility.newConnection(uis.InputBegan, function(input, gpe)
+		if gpe then return end
+		if input.UserInputType == Enum.UserInputType.MouseButton1 and Popup.Visible then
+			if not utility.isInFrame(Popup, uis:GetMouseLocation()) and not utility.isInFrame(InsideFrame, uis:GetMouseLocation()) then
+				closePopup()
+			end
+		end
+	end)
+
+	-- Seed from default
+	local default = element_info.default or colorfromrgb(255, 255, 255)
+	h, s, v = default:ToHSV()
+	transparency = element_info.default_transparency or 0
+	updateFromHSV()
+
+	return { popup = Popup, colorFromRGB = colorFromRGB }
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  Dropdown popup
+-- ─────────────────────────────────────────────────────────────────────────────
+local function createDropdownPopup(element_info, new_element, DropFrame, DropLabel, Frame)
+	local options = element_info.options or {}
+	local multi   = element_info.multi   or false
+	local no_none = element_info.no_none or false
+	local selected = {}
+
+	-- seed default
+	for _, v in pairs(element_info.default or {}) do selected[v] = true end
+
+	flags[element_info.flag] = multi and {} or (element_info.default and element_info.default[1] or nil)
+
+	local function getLabel()
+		local parts = {}
+		for k in pairs(selected) do utility.insert(parts, k) end
+		table.sort(parts)
+		if #parts == 0 then return "-" end
+		if multi then return table.concat(parts, ", ") end
+		return parts[1]
+	end
+
+	local function applySelected()
+		DropLabel.Text = getLabel()
+		if multi then
+			local arr = {}
+			for k in pairs(selected) do utility.insert(arr, k) end
+			flags[element_info.flag] = arr
+			new_element.onDropdownChange:Fire(arr)
+		else
+			local val = next(selected)
+			flags[element_info.flag] = val
+			new_element.onDropdownChange:Fire(val)
+		end
+	end
+
+	applySelected()
+
+	-- popup
+	local Popup = utility.newObject("Frame", {
+		BackgroundColor3 = colorfromrgb(22, 22, 22);
+		BorderColor3     = colorfromrgb(10, 10, 10);
+		ZIndex           = 90;
+		Visible          = false;
+		AutomaticSize    = Enum.AutomaticSize.Y;
+		Parent           = _screenGui
+	})
+	local PopScroll = utility.newObject("ScrollingFrame", {
+		BackgroundTransparency    = 1;
+		BorderSizePixel           = 0;
+		Size                      = udim2new(1, 0, 0, 120);
+		CanvasSize                = udim2new(0, 0, 0, 0);
+		AutomaticCanvasSize       = Enum.AutomaticSize.Y;
+		ScrollBarThickness        = 4;
+		ScrollBarImageColor3      = colorfromrgb(80, 80, 80);
+		ZIndex                    = 91;
+		Parent                    = Popup
+	})
+	utility.newObject("UIListLayout", {
+		SortOrder = Enum.SortOrder.LayoutOrder;
+		Parent    = PopScroll
+	})
+
+	local optionFrames = {}
+
+	local function createOption(optText)
+		local Row = utility.newObject("Frame", {
+			BackgroundColor3 = colorfromrgb(25, 25, 25);
+			BackgroundTransparency = 1;
+			BorderSizePixel  = 0;
+			Size             = udim2new(1, 0, 0, 22);
+			ZIndex           = 92;
+			Parent           = PopScroll
+		}); Row.Name = optText
+
+		local Lbl = utility.newObject("TextLabel", {
+			BackgroundTransparency = 1;
+			BorderSizePixel        = 0;
+			Position               = udim2new(0, 8, 0, 0);
+			Size                   = udim2new(1, -8, 1, 0);
+			Font                   = Enum.Font.SourceSans;
+			Text                   = optText;
+			TextColor3             = colorfromrgb(200, 200, 200);
+			TextSize               = 13;
+			TextXAlignment         = Enum.TextXAlignment.Left;
+			ZIndex                 = 93;
+			Parent                 = Row
+		})
+
+		local function refreshRow()
+			if selected[optText] then
+				Row.BackgroundTransparency = 0
+				Row.BackgroundColor3 = menu.accent_color
+				Lbl.TextColor3 = colorfromrgb(255, 255, 255)
+			else
+				Row.BackgroundTransparency = 1
+				Lbl.TextColor3 = colorfromrgb(200, 200, 200)
+			end
+		end
+		refreshRow()
+
+		utility.newConnection(Row.InputBegan, function(input, gpe)
+			if gpe then return end
+			if input.UserInputType == Enum.UserInputType.MouseButton1 then
+				if multi then
+					if selected[optText] then
+						if no_none and utility.length(selected) <= 1 then return end
+						selected[optText] = nil
+					else
+						selected[optText] = true
+					end
+				else
+					if no_none and selected[optText] then return end
+					selected = {}
+					if not selected[optText] then selected[optText] = true end
+					-- close after single select
+					_spawn(function() _wait(0.05); Popup.Visible = false end)
+				end
+				refreshRow()
+				applySelected()
+			end
+		end)
+
+		optionFrames[optText] = { row = Row, refresh = refreshRow }
+	end
+
+	for _, opt in ipairs(options) do createOption(opt) end
+
+	-- Add/remove dynamically
+	function new_element:addDropdownOption(opt)
+		utility.insert(options, opt)
+		createOption(opt)
+	end
+
+	function new_element:removeDropdownOption(opt)
+		if optionFrames[opt] then
+			optionFrames[opt].row:Destroy()
+			optionFrames[opt] = nil
+			selected[opt] = nil
+			utility.remove(options, opt)
+			applySelected()
+		end
+	end
+
+	function new_element:setDropdown(optArr)
+		selected = {}
+		for _, v in ipairs(optArr) do selected[v] = true end
+		for _, entry in pairs(optionFrames) do entry.refresh() end
+		applySelected()
+	end
+
+	local function positionPopup()
+		local ap = DropFrame.AbsolutePosition
+		local as = DropFrame.AbsoluteSize
+		Popup.Size = udim2new(0, as.X, 0, 0)
+		Popup.Position = udim2new(0, ap.X, 0, ap.Y + as.Y + 2)
+	end
+
+	local popupOpen = false
+
+	utility.newConnection(DropFrame.InputBegan, function(input, gpe)
+		if gpe then return end
+		if input.UserInputType == Enum.UserInputType.MouseButton1 then
+			popupOpen = not popupOpen
+			if popupOpen then
+				positionPopup()
+				Popup.Visible = true
+				Frame.Size = udim2new(1, 0, 0, 31)
+			else
+				Popup.Visible = false
+			end
+		end
+	end)
+
+	-- Close when clicking outside
+	utility.newConnection(uis.InputBegan, function(input, gpe)
+		if gpe then return end
+		if input.UserInputType == Enum.UserInputType.MouseButton1 and Popup.Visible then
+			if not utility.isInFrame(Popup, uis:GetMouseLocation()) and not utility.isInFrame(DropFrame, uis:GetMouseLocation()) then
+				Popup.Visible = false
+				popupOpen = false
+			end
+		end
+	end)
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  Element factory
+-- ─────────────────────────────────────────────────────────────────────────────
+function section:newElement(info)
+	local Frame = utility.newObject("Frame", {
+		BackgroundTransparency = 1;
+		BorderSizePixel        = 0;
+		Size                   = udim2new(1, 0, 0, 8);
+		Parent                 = self.element_holder
+	})
+	local Label = utility.newObject("TextLabel", {
+		BackgroundTransparency = 1;
+		BorderSizePixel        = 0;
+		Position               = udim2new(0, 20, 0, -1);
+		Size                   = udim2new(0.5, 0, 0, 8);
+		Font                   = Enum.Font.SourceSans;
+		Text                   = info.name;
+		TextColor3             = info.highlighted and colorfromrgb(182, 182, 101) or colorfromrgb(205, 205, 205);
+		TextSize               = 13;
+		TextXAlignment         = Enum.TextXAlignment.Left;
+		Parent                 = Frame
+	})
+
+	local new_element = { frame = Frame }
+	setmetatable(new_element, element)
+
+	local tab_frame = self.tab_frame
+
+	-- Track right-edge X offset for stacking colorpickers / keybinds
+	local rightOffset = 0
+
+	for element_type, element_info in pairs(info.types) do
+
+		-- ── Toggle ────────────────────────────────────────────────────────────
+		if lower(element_type) == "toggle" then
+			local Box = utility.newObject("Frame", {
+				BackgroundColor3 = colorfromrgb(12, 12, 12);
+				BorderSizePixel  = 0;
+				Size             = udim2new(0, 8, 0, 8);
+				Parent           = Frame
+			})
+			local BoxInside = utility.newObject("Frame", {
+				BackgroundColor3 = colorfromrgb(77, 77, 77);
+				BorderSizePixel  = 0;
+				Position         = udim2new(0, 1, 0, 1);
+				Size             = udim2new(1, -2, 1, -2);
+				Parent           = Box
+			})
+
+			new_element.onToggleChange = signal.new()
+			new_element.toggled        = false
+			flags[element_info.flag]   = false
+
+			function new_element:setToggle(bool)
+				self.toggled             = bool
+				flags[element_info.flag] = bool
+				BoxInside.BackgroundColor3 = bool and menu.accent_color or colorfromrgb(77, 77, 77)
+				self.onToggleChange:Fire(bool)
+			end
+
+			-- Keep toggle box accent-aware
+			registerAccentFill(BoxInside)
+			utility.newConnection(menu.on_accent_change, function()
+				if new_element.toggled then
+					BoxInside.BackgroundColor3 = menu.accent_color
+				end
+			end)
+
+			new_element:setToggle(element_info.default or false)
+
+			local function onClick(input, gpe)
+				if gpe then return end
+				if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not menu.busy then
+					new_element:setToggle(not new_element.toggled)
+				end
+			end
+			utility.newConnection(Label.InputBegan, onClick)
+			utility.newConnection(Box.InputBegan,   onClick)
+
+		-- ── Slider ────────────────────────────────────────────────────────────
+		elseif lower(element_type) == "slider" then
+			Frame.Size = udim2new(1, 0, 0, 20)
+			local Border = utility.newObject("Frame", {
+				BackgroundColor3 = colorfromrgb(12, 12, 12);
+				BorderSizePixel  = 0;
+				Position         = udim2new(0, 19, 0, 13);
+				Size             = udim2new(0.72, 0, 0, 7);
+				Parent           = Frame
+			})
+			local SliderInside = utility.newObject("Frame", {
+				BackgroundColor3 = colorfromrgb(40, 40, 40);
+				BorderSizePixel  = 0;
+				Position         = udim2new(0, 1, 0, 1);
+				Size             = udim2new(1, -2, 1, -2);
+				Parent           = Border
+			})
+			local Fill = utility.newObject("Frame", {
+				BackgroundColor3 = menu.accent_color;
+				BorderSizePixel  = 0;
+				Size             = udim2new(0, 0, 1, 0);
+				Parent           = SliderInside
+			})
+			registerAccentFill(Fill)
+			utility.newConnection(menu.on_accent_change, function() Fill.BackgroundColor3 = menu.accent_color end)
+
+			local dec = element_info.decimal or 0
+			local prefix = element_info.prefix or ""
+			local suffix = element_info.suffix or ""
+			local min_text = element_info.min_text
+
+			local ValueLabel = utility.newObject("TextLabel", {
+				AnchorPoint            = vector2new(0, 0.5);
+				BackgroundTransparency = 1;
+				BorderSizePixel        = 0;
+				Position               = udim2new(1, 4, 0.5, 0);
+				Size                   = udim2new(0, 60, 0, 12);
+				Font                   = Enum.Font.SourceSansBold;
+				Text                   = "0";
+				TextColor3             = colorfromrgb(205, 205, 205);
+				TextSize               = 11;
+				TextXAlignment         = Enum.TextXAlignment.Left;
+				Parent                 = Border
+			})
+
+			flags[element_info.flag]   = element_info.min
+			new_element.onSliderChange = signal.new()
+
+			function new_element:setValue(value)
+				value = clamp(utility.round(value, dec), element_info.min, element_info.max)
+				local pct = (value - element_info.min) / (element_info.max - element_info.min)
+				Fill.Size  = udim2new(pct, 0, 1, 0)
+				local label = (min_text and value == element_info.min) and min_text or (prefix .. tostring(value) .. suffix)
+				ValueLabel.Text          = label
+				flags[element_info.flag] = value
+				self.onSliderChange:Fire(value)
+			end
+
+			-- Mouse drag
+			local sliderDragging = false
+			utility.newConnection(Border.InputBegan, function(input, gpe)
+				if gpe then return end
+				if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not menu.busy then
+					sliderDragging = true; menu.busy = true
+				end
+			end)
+			utility.newConnection(SliderInside.InputBegan, function(input, gpe)
+				if gpe then return end
+				if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not menu.busy then
+					sliderDragging = true; menu.busy = true
+				end
+			end)
+			utility.newConnection(uis.InputEnded, function(input)
+				if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+					if sliderDragging then sliderDragging = false; menu.busy = false end
+				end
+			end)
+			utility.newConnection(rs.RenderStepped, function()
+				if not sliderDragging then return end
+				local ap  = SliderInside.AbsolutePosition
+				local as  = SliderInside.AbsoluteSize
+				local ml  = uis:GetMouseLocation()
+				local pct = clamp((ml.X - ap.X) / as.X, 0, 1)
+				local raw = element_info.min + pct * (element_info.max - element_info.min)
+				new_element:setValue(raw)
+			end)
+
+			-- Optional +/- changers
+			if element_info.changers then
+				local step = element_info.changers
+				local BtnMinus = utility.newObject("TextLabel", {
+					AnchorPoint            = vector2new(0, 0.5);
+					BackgroundTransparency = 1;
+					BorderSizePixel        = 0;
+					Position               = udim2new(0, -14, 0.5, 0);
+					Size                   = udim2new(0, 10, 0, 10);
+					Font                   = Enum.Font.SourceSansBold;
+					Text                   = "-";
+					TextColor3             = colorfromrgb(150, 150, 150);
+					TextSize               = 14;
+					Parent                 = Border
+				})
+				local BtnPlus = utility.newObject("TextLabel", {
+					AnchorPoint            = vector2new(0, 0.5);
+					BackgroundTransparency = 1;
+					BorderSizePixel        = 0;
+					Position               = udim2new(1, 4, 0.5, 0);
+					Size                   = udim2new(0, 10, 0, 10);
+					Font                   = Enum.Font.SourceSansBold;
+					Text                   = "+";
+					TextColor3             = colorfromrgb(150, 150, 150);
+					TextSize               = 14;
+					Parent                 = Border
+				})
+				ValueLabel.Position = udim2new(1, 16, 0.5, 0)
+
+				utility.newConnection(BtnMinus.InputBegan, function(input, gpe)
+					if gpe then return end
+					if input.UserInputType == Enum.UserInputType.MouseButton1 then
+						new_element:setValue(flags[element_info.flag] - step)
+					end
+				end)
+				utility.newConnection(BtnPlus.InputBegan, function(input, gpe)
+					if gpe then return end
+					if input.UserInputType == Enum.UserInputType.MouseButton1 then
+						new_element:setValue(flags[element_info.flag] + step)
+					end
+				end)
+			end
+
+			new_element:setValue(element_info.default or element_info.min)
+
+		-- ── Dropdown ──────────────────────────────────────────────────────────
+		elseif lower(element_type) == "dropdown" then
+			Frame.Size = udim2new(1, 0, 0, 31)
+			local DropBorder = utility.newObject("Frame", {
+				BackgroundColor3 = colorfromrgb(12, 12, 12);
+				BorderSizePixel  = 0;
+				Position         = udim2new(0, 19, 0, 11);
+				Size             = udim2new(0.72, 0, 0, 20);
+				Parent           = Frame
+			})
+			local DropInside = utility.newObject("Frame", {
+				BackgroundColor3 = colorfromrgb(35, 35, 35);
+				BorderSizePixel  = 0;
+				Position         = udim2new(0, 1, 0, 1);
+				Size             = udim2new(1, -2, 1, -2);
+				Parent           = DropBorder
+			})
+			-- Arrow
+			utility.newObject("TextLabel", {
+				AnchorPoint            = vector2new(1, 0.5);
+				BackgroundTransparency = 1;
+				BorderSizePixel        = 0;
+				Position               = udim2new(1, -4, 0.5, 0);
+				Size                   = udim2new(0, 12, 0, 12);
+				Font                   = Enum.Font.SourceSansBold;
+				Text                   = "▾";
+				TextColor3             = colorfromrgb(120, 120, 120);
+				TextSize               = 14;
+				Parent                 = DropInside
+			})
+			local DropLabel = utility.newObject("TextLabel", {
+				BackgroundTransparency = 1;
+				BorderSizePixel        = 0;
+				Position               = udim2new(0, 6, 0, 0);
+				Size                   = udim2new(1, -22, 1, 0);
+				Font                   = Enum.Font.SourceSans;
+				Text                   = "-";
+				TextColor3             = colorfromrgb(152, 152, 152);
+				TextSize               = 13;
+				TextWrapped            = true;
+				TextXAlignment         = Enum.TextXAlignment.Left;
+				Parent                 = DropInside
+			})
+
+			new_element.onDropdownChange = signal.new()
+			flags[element_info.flag]     = {}
+
+			createDropdownPopup(element_info, new_element, DropInside, DropLabel, Frame)
+
+		-- ── ColorPicker ───────────────────────────────────────────────────────
+		elseif lower(element_type) == "colorpicker" then
+			rightOffset = rightOffset + 19
+			local ColorBox = utility.newObject("Frame", {
+				AnchorPoint      = vector2new(1, 0);
+				BackgroundColor3 = colorfromrgb(12, 12, 12);
+				BorderSizePixel  = 0;
+				Position         = udim2new(1, -rightOffset + 19, 0, 0);
+				Size             = udim2new(0, 17, 0, 8);
+				Parent           = Frame
+			})
+			local CPInside = utility.newObject("Frame", {
+				BackgroundColor3 = element_info.default or colorfromrgb(255, 255, 255);
+				BorderSizePixel  = 0;
+				Position         = udim2new(0, 1, 0, 1);
+				Size             = udim2new(1, -2, 1, -2);
+				Parent           = ColorBox
+			})
+
+			new_element.onColorChange = signal.new()
+			if element_info.flag then flags[element_info.flag] = element_info.default or colorfromrgb(255,255,255) end
+			if element_info.transparency_flag then flags[element_info.transparency_flag] = element_info.default_transparency or 0 end
+
+			function new_element:setColor(color, transp, no_move)
+				if element_info.flag then flags[element_info.flag] = color end
+				if element_info.transparency_flag then flags[element_info.transparency_flag] = transp or 0 end
+				if not no_move then CPInside.BackgroundColor3 = color end
+				self.onColorChange:Fire(color, transp or 0)
+			end
+
+			createColorPickerPopup(element_info, new_element, CPInside)
+			new_element:setColor(element_info.default or colorfromrgb(255,255,255), element_info.default_transparency or 0)
+
+		-- ── Keybind ───────────────────────────────────────────────────────────
+		elseif lower(element_type) == "keybind" then
+			rightOffset = rightOffset + 1
+			local KLabel = utility.newObject("TextLabel", {
+				AnchorPoint            = vector2new(1, 0);
+				BackgroundTransparency = 1;
+				BorderSizePixel        = 0;
+				AutomaticSize          = Enum.AutomaticSize.X;
+				Position               = udim2new(1, -rightOffset, 0, 0);
+				Size                   = udim2new(0, 0, 0, 7);
+				Font                   = Enum.Font.SourceSansBold;
+				Text                   = "[-]";
+				TextColor3             = colorfromrgb(117, 117, 117);
+				TextSize               = 9;
+				Parent                 = Frame
+			})
+
+			new_element.onActiveChange = signal.new()
+
+			flags[element_info.flag] = {
+				method = element_info.method or 1,
+				key    = nil,
+				active = false,
+			}
+
+			local kb_flag = flags[element_info.flag]
+
+			function new_element:setKey(keycode)
+				local name = keycode and (shortened_characters[keycode] or keycode.Name) or "-"
+				KLabel.Text = "[" .. string.upper(name) .. "]"
+				kb_flag.key = keycode
+			end
+
+			if element_info.key then new_element:setKey(element_info.key) end
+
+			-- Method display
+			local METHOD_NAMES = { "Always", "Hold", "Toggle" }
+			local methodMenuOpen = false
+			local MethodPopup    = nil
+
+			local function openMethodMenu()
+				if element_info.method_locked then return end
+				if MethodPopup then MethodPopup:Destroy() end
+				MethodPopup = utility.newObject("Frame", {
+					BackgroundColor3 = colorfromrgb(22, 22, 22);
+					BorderColor3     = colorfromrgb(10, 10, 10);
+					ZIndex           = 95;
+					Size             = udim2new(0, 70, 0, 0);
+					AutomaticSize    = Enum.AutomaticSize.Y;
+					Parent           = _screenGui
+				})
+				local ap = KLabel.AbsolutePosition
+				MethodPopup.Position = udim2new(0, ap.X, 0, ap.Y + 10)
+
+				local layout = utility.newObject("UIListLayout", { SortOrder = Enum.SortOrder.LayoutOrder; Parent = MethodPopup })
+
+				for i, name in ipairs(METHOD_NAMES) do
+					local Row = utility.newObject("Frame", {
+						BackgroundColor3       = kb_flag.method == i and menu.accent_color or colorfromrgb(30, 30, 30);
+						BackgroundTransparency = kb_flag.method == i and 0 or 0;
+						BorderSizePixel        = 0;
+						Size                   = udim2new(1, 0, 0, 20);
+						ZIndex                 = 96;
+						Parent                 = MethodPopup
+					})
+					utility.newObject("TextLabel", {
+						BackgroundTransparency = 1;
+						BorderSizePixel        = 0;
+						Position               = udim2new(0, 6, 0, 0);
+						Size                   = udim2new(1, -6, 1, 0);
+						Font                   = Enum.Font.SourceSans;
+						Text                   = name;
+						TextColor3             = colorfromrgb(200, 200, 200);
+						TextSize               = 12;
+						TextXAlignment         = Enum.TextXAlignment.Left;
+						ZIndex                 = 97;
+						Parent                 = Row
+					})
+					utility.newConnection(Row.InputBegan, function(input, gpe)
+						if gpe then return end
+						if input.UserInputType == Enum.UserInputType.MouseButton1 then
+							kb_flag.method = i
+							MethodPopup:Destroy(); MethodPopup = nil; methodMenuOpen = false
+						end
+					end)
+				end
+				methodMenuOpen = true
+			end
+
+			-- Left click = bind; Right click = method menu
+			local bindingKeybind = false
+			utility.newConnection(KLabel.InputBegan, function(input, gpe)
+				if gpe then return end
+				if input.UserInputType == Enum.UserInputType.MouseButton1 then
+					if menu.active_keybind and menu.active_keybind ~= new_element then
+						-- deselect previous
+					end
+					bindingKeybind = true
+					menu.active_keybind = new_element
+					KLabel.Text = "[...]"
+					KLabel.TextColor3 = menu.accent_color
+				elseif input.UserInputType == Enum.UserInputType.MouseButton2 then
+					openMethodMenu()
+				end
+			end)
+
+			utility.newConnection(uis.InputBegan, function(input, gpe)
+				if gpe then return end
+				if not bindingKeybind then return end
+				if input.UserInputType == Enum.UserInputType.Keyboard then
+					if not utility.isValidKey(input.KeyCode) then
+						bindingKeybind = false
+						KLabel.TextColor3 = colorfromrgb(117, 117, 117)
+						menu.active_keybind = nil
+						return
+					end
+					new_element:setKey(input.KeyCode)
+				elseif input.UserInputType == Enum.UserInputType.MouseButton1 or
+				       input.UserInputType == Enum.UserInputType.MouseButton2 or
+				       input.UserInputType == Enum.UserInputType.MouseButton3 then
+					-- allow mouse buttons as keybinds
+					local fake = input.UserInputType
+					local name = shortened_characters[fake] or tostring(fake)
+					KLabel.Text = "[" .. name .. "]"
+					kb_flag.key = nil  -- store as mouse type
+					kb_flag.mouseButton = fake
+				end
+				bindingKeybind = false
+				KLabel.TextColor3 = colorfromrgb(117, 117, 117)
+				menu.active_keybind = nil
+			end)
+
+			-- Hook keybind activation logic
+			utility.insert(menu.keybinds, {
+				element  = new_element,
+				flag     = element_info.flag,
+				toggleFlag = element_info.toggle_flag,
+			})
+
+		-- ── Button ────────────────────────────────────────────────────────────
+		elseif lower(element_type) == "button" then
+			Frame.Size = udim2new(1, 0, 0, 25)
+			Label.Visible = false
+			local BtnBorder = utility.newObject("Frame", {
+				BackgroundColor3 = colorfromrgb(12, 12, 12);
+				BorderSizePixel  = 0;
+				Position         = udim2new(0, 19, 0, 0);
+				Size             = udim2new(0.72, 0, 0, 25);
+				Parent           = Frame
+			})
+			local BtnInside = utility.newObject("Frame", {
+				BackgroundColor3 = colorfromrgb(30, 30, 30);
+				BorderSizePixel  = 0;
+				Position         = udim2new(0, 1, 0, 1);
+				Size             = udim2new(1, -2, 1, -2);
+				Parent           = BtnBorder
+			})
+			utility.newObject("TextLabel", {
+				BackgroundTransparency = 1;
+				BorderSizePixel        = 0;
+				Size                   = udim2new(1, 0, 1, 0);
+				Font                   = Enum.Font.SourceSans;
+				Text                   = element_info.text or "Button";
+				TextColor3             = colorfromrgb(212, 212, 212);
+				TextSize               = 13;
+				TextWrapped            = true;
+				Parent                 = BtnInside
+			})
+
+			-- Hover effect
+			utility.newConnection(BtnInside.MouseEnter, function()
+				utility.tween(BtnInside, newtweeninfo(0.1), { BackgroundColor3 = colorfromrgb(45, 45, 45) })
+			end)
+			utility.newConnection(BtnInside.MouseLeave, function()
+				utility.tween(BtnInside, newtweeninfo(0.1), { BackgroundColor3 = colorfromrgb(30, 30, 30) })
+			end)
+
+			utility.newConnection(BtnInside.InputBegan, function(input, gpe)
+				if gpe then return end
+				if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
+					utility.tween(BtnInside, newtweeninfo(0.05), { BackgroundColor3 = menu.accent_color })
+					task.delay(0.12, function()
+						utility.tween(BtnInside, newtweeninfo(0.1), { BackgroundColor3 = colorfromrgb(30, 30, 30) })
+					end)
+					if utility.isInFrame(BtnInside, input.Position) and element_info.callback then
+						element_info.callback()
+					end
+				end
+			end)
+
+		-- ── Multibox ──────────────────────────────────────────────────────────
+		elseif lower(element_type) == "multibox" then
+			local maxRows  = element_info.max or 6
+			local hasSearch = element_info.search or false
+			Frame.Size  = udim2new(1, 0, 0, maxRows * 20 + (hasSearch and 22 or 0))
+			Label.Visible = false
+
+			local containerY = hasSearch and 22 or 0
+			local Container = utility.newObject("Frame", {
+				BackgroundColor3 = colorfromrgb(12, 12, 12);
+				BorderSizePixel  = 0;
+				Position         = udim2new(0, 19, 0, containerY);
+				Size             = udim2new(0.72, 0, 0, maxRows * 20);
+				ZIndex           = 2;
+				Parent           = Frame
+			})
+			local MBScroll = utility.newObject("ScrollingFrame", {
+				BackgroundTransparency    = 1;
+				BorderSizePixel           = 0;
+				Size                      = udim2new(1, 0, 1, 0);
+				CanvasSize                = udim2new(0, 0, 0, 0);
+				AutomaticCanvasSize       = Enum.AutomaticSize.Y;
+				ScrollBarThickness        = 4;
+				ScrollBarImageColor3      = colorfromrgb(80, 80, 80);
+				ZIndex                    = 3;
+				Parent                    = Container
+			})
+			utility.newObject("UIListLayout", {
+				SortOrder = Enum.SortOrder.LayoutOrder;
+				Parent    = MBScroll
+			})
+
+			-- Search bar
+			local SearchBox = nil
+			if hasSearch then
+				local SearchBorder = utility.newObject("Frame", {
+					BackgroundColor3 = colorfromrgb(12, 12, 12);
+					BorderSizePixel  = 0;
+					Position         = udim2new(0, 19, 0, 0);
+					Size             = udim2new(0.72, 0, 0, 20);
+					ZIndex           = 2;
+					Parent           = Frame
+				})
+				SearchBox = utility.newObject("TextBox", {
+					BackgroundColor3       = colorfromrgb(30, 30, 30);
+					BorderSizePixel        = 0;
+					Position               = udim2new(0, 1, 0, 1);
+					Size                   = udim2new(1, -2, 1, -2);
+					ZIndex                 = 3;
+					Font                   = Enum.Font.SourceSans;
+					PlaceholderText        = "Search...";
+					PlaceholderColor3      = colorfromrgb(90, 90, 90);
+					Text                   = "";
+					TextColor3             = colorfromrgb(200, 200, 200);
+					TextSize               = 12;
+					TextXAlignment         = Enum.TextXAlignment.Left;
+					ClearTextOnFocus       = false;
+					Parent                 = SearchBorder
+				})
+			end
+
+			new_element.onSelectionChange = signal.new()
+			new_element.selected_option   = nil
+
+			local optionFrames = {}
+
+			local function filterOptions(query)
+				if not query or query == "" then
+					for _, entry in pairs(optionFrames) do
+						entry.frame.Visible = true
+					end
+					return
+				end
+				local q = lower(query)
+				for name, entry in pairs(optionFrames) do
+					entry.frame.Visible = lower(name):find(q, 1, true) ~= nil
+				end
+			end
+
+			if SearchBox then
+				utility.newConnection(SearchBox:GetPropertyChangedSignal("Text"), function()
+					filterOptions(SearchBox.Text)
+				end)
+			end
+
+			function new_element:addOption(text)
+				local Row = utility.newObject("Frame", {
+					BackgroundColor3       = colorfromrgb(25, 25, 25);
+					BackgroundTransparency = 1;
+					BorderSizePixel        = 0;
+					Size                   = udim2new(1, 0, 0, 20);
+					ZIndex                 = 4;
+					Parent                 = MBScroll
+				}); Row.Name = text
+				local Lbl = utility.newObject("TextLabel", {
+					BackgroundTransparency = 1;
+					BorderSizePixel        = 0;
+					Position               = udim2new(0, 8, 0, 0);
+					Size                   = udim2new(1, -8, 1, 0);
+					Font                   = Enum.Font.SourceSans;
+					Text                   = text;
+					TextColor3             = colorfromrgb(208, 208, 208);
+					TextSize               = 13;
+					TextXAlignment         = Enum.TextXAlignment.Left;
+					ZIndex                 = 5;
+					Parent                 = Row
+				})
+
+				local function select()
+					-- deselect previous
+					if new_element.selected_option and optionFrames[new_element.selected_option] then
+						local prev = optionFrames[new_element.selected_option]
+						prev.frame.BackgroundTransparency = 1
+						prev.label.TextColor3 = colorfromrgb(208, 208, 208)
+					end
+					new_element.selected_option = text
+					Row.BackgroundTransparency = 0
+					Row.BackgroundColor3 = menu.accent_color
+					Lbl.TextColor3 = colorfromrgb(255, 255, 255)
+					new_element.onSelectionChange:Fire(text)
+				end
+
+				utility.newConnection(Row.InputBegan, function(input, gpe)
+					if gpe then return end
+					if input.UserInputType == Enum.UserInputType.MouseButton1 then
+						if new_element.selected_option == text then
+							-- deselect
+							Row.BackgroundTransparency = 1
+							Lbl.TextColor3 = colorfromrgb(208, 208, 208)
+							new_element.selected_option = nil
+							new_element.onSelectionChange:Fire(nil)
+						else
+							select()
+						end
+					end
+				end)
+
+				optionFrames[text] = { frame = Row, label = Lbl }
+			end
+
+			function new_element:removeOption(text)
+				if optionFrames[text] then
+					optionFrames[text].frame:Destroy()
+					optionFrames[text] = nil
+					if self.selected_option == text then
+						self.selected_option = nil
+						self.onSelectionChange:Fire(nil)
+					end
+				end
+			end
+
+			function new_element:setSelected(text)
+				if optionFrames[text] then
+					optionFrames[text].frame.InputBegan:Fire(
+						{ UserInputType = Enum.UserInputType.MouseButton1 }, false
+					)
+				end
+			end
+
+		-- ── Textbox ───────────────────────────────────────────────────────────
+		elseif lower(element_type) == "textbox" then
+			Frame.Size  = udim2new(1, 0, 0, 20)
+			local TBBorder = utility.newObject("Frame", {
+				BackgroundColor3 = colorfromrgb(12, 12, 12);
+				BorderSizePixel  = 0;
+				Position         = udim2new(0, 19, 0, 0);
+				Size             = udim2new(0.72, 0, 0, 20);
+				Parent           = Frame
+			})
+			local TB = utility.newObject("TextBox", {
+				BackgroundColor3   = colorfromrgb(30, 30, 30);
+				BorderSizePixel    = 0;
+				Position           = udim2new(0, 1, 0, 1);
+				Size               = udim2new(1, -2, 1, -2);
+				ZIndex             = 2;
+				Font               = Enum.Font.SourceSans;
+				PlaceholderText    = info.name ~= "_" and info.name or "Enter text...";
+				PlaceholderColor3  = colorfromrgb(90, 90, 90);
+				Text               = "";
+				TextColor3         = colorfromrgb(208, 208, 208);
+				TextSize           = 13;
+				TextXAlignment     = Enum.TextXAlignment.Left;
+				ClearTextOnFocus   = false;
+				Parent             = TBBorder
+			})
+			Label.Visible = false
+			flags[element_info.flag] = ""
+
+			function new_element:setText(text)
+				text = text or ""
+				TB.Text = text
+				flags[element_info.flag] = text
+			end
+
+			-- Focus highlight
+			utility.newConnection(TB.Focused, function()
+				utility.tween(TB, newtweeninfo(0.1), { BackgroundColor3 = colorfromrgb(40, 40, 40) })
+				menu.busy = true
+			end)
+			utility.newConnection(TB.FocusLost, function()
+				utility.tween(TB, newtweeninfo(0.1), { BackgroundColor3 = colorfromrgb(30, 30, 30) })
+				flags[element_info.flag] = TB.Text
+				menu.busy = false
+			end)
+			utility.newConnection(TB:GetPropertyChangedSignal("Text"), function()
+				flags[element_info.flag] = TB.Text
+			end)
+		end
+	end
+
+	self.elements[info.name] = new_element
+	return new_element
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  Element methods
+-- ─────────────────────────────────────────────────────────────────────────────
+function element:setVisible(bool)
+	self.frame.Visible = bool
+end
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  Keybind runtime (fires active/inactive based on method)
+-- ─────────────────────────────────────────────────────────────────────────────
+utility.newConnection(uis.InputBegan, function(input, gpe)
+	if gpe then return end
+
+	-- Menu toggle
+	if input.KeyCode ~= Enum.KeyCode.Unknown then
+		if string.upper(input.KeyCode.Name) == string.upper(menu.toggle) then
+			if menu.is_open then menu.on_closing:Fire() else menu.on_opening:Fire() end
+		end
+	end
+
+	-- Keybinds
+	for _, kb in pairs(menu.keybinds) do
+		local kbf = flags[kb.flag]
+		if not kbf or not kbf.key then continue end
+		if kbf.key == input.KeyCode then
+			local method = kbf.method
+			if method == 1 then  -- always active while toggle is on: do nothing here
+			elseif method == 2 then  -- held: activate on press
+				kbf.active = true
+				kb.element.onActiveChange:Fire(true)
+			elseif method == 3 then  -- toggle on/off
+				kbf.active = not kbf.active
+				kb.element.onActiveChange:Fire(kbf.active)
+			end
+		end
+	end
+end, true)
+
+utility.newConnection(uis.InputEnded, function(input)
+	for _, kb in pairs(menu.keybinds) do
+		local kbf = flags[kb.flag]
+		if not kbf or not kbf.key then continue end
+		if kbf.key == input.KeyCode and kbf.method == 2 then
+			kbf.active = false
+			kb.element.onActiveChange:Fire(false)
+		end
+	end
+end, true)
+
+-- ─────────────────────────────────────────────────────────────────────────────
+--  Expose public API
+-- ─────────────────────────────────────────────────────────────────────────────
+menu.config  = config
+menu.utility = utility
+
+return menu
