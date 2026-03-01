@@ -1185,9 +1185,7 @@ end)
 -- Troll commands section
 local TargetSec3 = TargetTab:NewSection("Troll Commands")
 
-local instanttptoggle = TargetTab:NewToggle("use instant tp (beta)", false, function(value)
-    getgenv().instant_tp_toggle = value
-end)
+getgenv().instant_tp_toggle = true
 
 -- Bang toggle
 getgenv().banging = false
