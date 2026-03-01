@@ -1,8 +1,14 @@
 local library = loadstring(game:HttpGet("https://gist.githubusercontent.com/jimbohimbo233-crypto/016004c95ab9a84c6f7472f809ebed90/raw/a8795bd9abb5da0c5d29e69203ff294666481248/uiuiuiui%25202"))()
 
 
-library.rank = "dev"
-local Wm = library:Watermark("turfyware v1.2 | ".. "rank: " .. library.rank)
+local rank = "dev"
+
+if game:GetService("Players").LocalPlayer.Name == "iamnaconburtal" then
+    rank = "diddy blud"
+end
+
+library.rank = rank
+local Wm = library:Watermark("turfyware v2.2 | ".. "rank: " .. library.rank)
 local FpsWm = Wm:AddWatermark("fps: " .. library.fps)
 coroutine.wrap(function()
     while wait(.5) do
@@ -12,7 +18,7 @@ end)()
 
 local Notif = library:InitNotifications()
 local LoadingXSX = Notif:Notify("Loading turfyware, please be patient.", 5, "information") 
-library.title = "turfyware - v1.2"
+library.title = "turfyware - v2.2"
 
 library:Introduction()
 wait(0.8)
@@ -512,6 +518,7 @@ end
 local flinging_toggle = false
 local flinging_target = false
 
+
 local PlayerTab = Init:NewTab("Player")
 local FlingSec1 = PlayerTab:NewSection("Fling")
 
@@ -546,6 +553,35 @@ local NoclipToggle = PlayerTab:NewToggle("Noclip", false, function(value)
     local vers = value and "on" or "off"
     Notif:Notify("Toggled noclip: " .. vers, 5, "information")
 end):AddKeybind(Enum.KeyCode.C)
+
+-- Anti-Fling
+local antifling_toggle = false
+
+local AntiFlingToggle = PlayerTab:NewToggle("Anti Fling", false, function(value)
+    antifling_toggle = value
+    local vers = value and "on" or "off"
+    Notif:Notify("Toggled anti-fling: " .. vers, 5, "information")
+end)
+
+-- Anti-Fling loop
+task.spawn(function()
+    while task.wait() do
+        if antifling_toggle then
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character then
+                    local root = player.Character:FindFirstChild("HumanoidRootPart")
+                    if root then
+                        pcall(function()
+                            root.Velocity = Vector3.zero
+                            root.AssemblyLinearVelocity = Vector3.zero
+                            root.AssemblyAngularVelocity = Vector3.zero
+                        end)
+                    end
+                end
+            end
+        end
+    end
+end)
 
 local FlyToggle = PlayerTab:NewToggle("Fly", false, function(value)
     fly_toggle = value
@@ -681,10 +717,10 @@ local GunTab = MM2Tab:NewSection("Gun")
 local GunTPButton = MM2Tab:NewButton("Teleport to Gun", function()
     task.spawn(function()
         Notif:Notify("Checking for gun...", 3, "information")
-
+        
         local gunDropped = false
         local gunCFrame = nil
-
+        
         -- Check workspace for GunDrop
         for _, v in pairs(workspace:GetChildren()) do
             for _, k in pairs(v:GetChildren()) do
@@ -696,26 +732,71 @@ local GunTPButton = MM2Tab:NewButton("Teleport to Gun", function()
             end
             if gunDropped then break end
         end
-
+        
         if not gunDropped then
             Notif:Notify("Gun is not currently dropped", 3, "warning")
             return
         end
-
+        
+        -- Save original position
+        local originalPosition = LocalPlayer.Character.HumanoidRootPart.CFrame
+        
         Notif:Notify("Gun found, teleporting...", 3, "information")
-
+        
         -- Tween player to gun over 0.25s
         for i = 1, 5 do
             tweento(gunCFrame)
             task.wait(0.05)
         end
-
+        
         task.wait(0.5)
-
+        
         -- Slow approach to gun
         tweento_slow(gunCFrame * CFrame.new(0, 0.1, 0))
-
-        Notif:Notify("Arrived at gun!", 3, "success")
+        
+        Notif:Notify("Arrived at gun! Waiting for pickup...", 3, "success")
+        
+        -- Wait until gun is no longer dropped (picked up)
+        local timeout = 0
+        local maxTimeout = 100 -- 10 seconds max wait (100 * 0.1s)
+        
+        while timeout < maxTimeout do
+            task.wait(0.1)
+            timeout = timeout + 1
+            
+            -- Check if gun still exists
+            local stillDropped = false
+            for _, v in pairs(workspace:GetChildren()) do
+                for _, k in pairs(v:GetChildren()) do
+                    if k.Name == "GunDrop" then
+                        stillDropped = true
+                        break
+                    end
+                end
+                if stillDropped then break end
+            end
+            
+            -- If gun was picked up, break the loop
+            if not stillDropped then
+                Notif:Notify("Gun picked up! Returning to original position...", 3, "information")
+                break
+            end
+        end
+        
+        -- Check if we timed out
+        if timeout >= maxTimeout then
+            Notif:Notify("Timeout waiting for gun pickup. Returning...", 3, "warning")
+        end
+        
+        -- Return to original position
+        task.wait(0.3)
+        
+        for i = 1, 5 do
+            tweento(originalPosition)
+            task.wait()
+        end
+        
+        Notif:Notify("Returned to original position!", 3, "success")
     end)
 end)
 
@@ -725,6 +806,51 @@ local GunAnnounce = MM2Tab:NewToggle("notify on gun drop", false, function(value
     gunDrop = value
 end)
 
+local KillAllSec = MM2Tab:NewSection("Combat")
+
+local killing_all = false
+
+local KillAllButton = MM2Tab:NewButton("Kill All (2s)", function()
+    if killing_all then
+        Notif:Notify("Kill all already running", 3, "warning")
+        return
+    end
+    
+    task.spawn(function()
+        killing_all = true
+        Notif:Notify("Kill all started - please left click!", 5, "information")
+        
+        local startTime = tick()
+        local duration = 2
+        
+        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not myRoot then
+            Notif:Notify("Character not found", 3, "error")
+            killing_all = false
+            return
+        end
+        
+        while tick() - startTime < duration do
+            for _, player in pairs(Players:GetPlayers()) do
+                if player ~= LocalPlayer and player.Character then
+                    local targetRoot = player.Character:FindFirstChild("HumanoidRootPart")
+                    
+                    if targetRoot then
+                        pcall(function()
+                            -- Teleport other players in front of you (locally on your client)
+                            targetRoot.CFrame = myRoot.CFrame * CFrame.new(0, 0, -3)
+                        end)
+                        task.wait(0.05)
+                    end
+                end
+            end
+            task.wait(0.1)
+        end
+        
+        killing_all = false
+        Notif:Notify("Kill all complete!", 3, "success")
+    end)
+end)
 
 -- Helper function to check if player is R15
 local function r15(plr)
@@ -862,6 +988,37 @@ local function getVelocity(part)
     return part.AssemblyLinearVelocity or part.Velocity
 end
 
+getgenv().loop_force_tp = false
+getgenv().instant_tp_toggle = false
+
+-- Add this helper function near the other helper functions
+-- Replace the ForceTPToTarget function with this improved version:
+local function ForceTPToTarget(targetPlayer)
+    if not targetPlayer or targetPlayer == LocalPlayer then return end
+    
+    local targetCharacter = targetPlayer.Character
+    if not targetCharacter then return end
+    
+    local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
+    if not targetRoot then return end
+    
+    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return end
+    
+    -- Set the PhysicsRepRootPart to the target's root part
+    pcall(function()
+        sethiddenproperty(myRoot, "PhysicsRepRootPart", targetRoot)
+    end)
+    
+    -- Force immediate position update with offset
+    myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 2, 0)
+    
+    -- Zero out all velocity components
+    myRoot.AssemblyLinearVelocity = Vector3.zero
+    myRoot.AssemblyAngularVelocity = Vector3.zero
+    myRoot.Velocity = Vector3.zero
+end
+
 local FlingTarget = TargetTab:NewButton("Fling target", function()
     if currentTarget == "" then
         Notif:Notify("No target set", 5, "warning")
@@ -921,8 +1078,116 @@ local FlingTarget = TargetTab:NewButton("Fling target", function()
     end)
 end)
 
+
+
+-- Fling V2 Button
+-- Fling V2 Button
+local FlingV2Target = TargetTab:NewButton("Fling V2", function()
+    if currentTarget == "" then
+        Notif:Notify("No target set", 5, "warning")
+        return
+    end
+
+    local resolvedPlayers = GetPlayer(currentTarget)
+    if not resolvedPlayers or #resolvedPlayers == 0 then
+        Notif:Notify("Target not found", 5, "warning")
+        return
+    end
+
+    local targetName = resolvedPlayers[1]
+    local targetPlayer = Players:FindFirstChild(targetName)
+    if not targetPlayer or not targetPlayer.Character or not targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+        Notif:Notify("Target player not available", 5, "warning")
+        return
+    end
+
+    Notif:Notify("Fling V2 started on: " .. targetPlayer.Name, 5, "information")
+
+    task.spawn(function()
+        flinging_target = true
+        local before_fling = LocalPlayer.Character.HumanoidRootPart.CFrame
+        local duration = 2
+        local startTime = tick()
+        local flingSuccess = false
+        
+        while flinging_target and (tick() - startTime) < duration do
+            if not targetPlayer or not targetPlayer.Character then
+                break
+            end
+            
+            local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if not targetRoot then
+                break
+            end
+            
+            -- Check if target velocity is over 1000
+            local targetVelocity = getVelocity(targetRoot)
+            if targetVelocity.Magnitude > 1000 then
+                flingSuccess = true
+                Notif:Notify("Target flung successfully! (Velocity: " .. math.floor(targetVelocity.Magnitude) .. ")", 3, "success")
+                break
+            end
+            
+            -- Force TP to target
+            ForceTPToTarget(targetPlayer)
+            
+            -- Apply velocity burst
+            local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if myRoot then
+                local originalVelocity = myRoot.Velocity
+                myRoot.Velocity = Vector3.new(-30000, -40000, -30000)
+                
+                RunService.RenderStepped:Wait()
+                if myRoot.Parent then 
+                    myRoot.Velocity = originalVelocity 
+                end
+            end
+            
+            -- Use Heartbeat for more consistent timing
+            RunService.Heartbeat:Wait()
+        end
+        
+        flinging_target = false
+        
+        -- Triple-zero all velocity components
+        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if myRoot then
+            for i = 1, 3 do
+                myRoot.Velocity = Vector3.zero
+                myRoot.AssemblyLinearVelocity = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                task.wait(0.05)
+            end
+        end
+        
+        -- Return to original position with multiple attempts
+        if myRoot and before_fling then
+            for i = 1, 5 do
+                myRoot.CFrame = before_fling
+                myRoot.Velocity = Vector3.zero
+                myRoot.AssemblyLinearVelocity = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                task.wait(0.05)
+            end
+        end
+        
+        if not flingSuccess then
+            Notif:Notify("Fling V2 complete (2s timeout), returned to position", 5, "information")
+        else
+            Notif:Notify("Returned to original position", 3, "success")
+        end
+    end)
+end)
+-- Instant TP Toggle
+
+
+
 -- Troll commands section
 local TargetSec3 = TargetTab:NewSection("Troll Commands")
+
+local instanttptoggle = TargetTab:NewToggle("use instant tp (beta)", false, function(value)
+    getgenv().instant_tp_toggle = value
+end)
 
 -- Bang toggle
 getgenv().banging = false
@@ -931,7 +1196,6 @@ getgenv().bang = nil
 
 local BangToggle = TargetTab:NewToggle("Bang", false, function(value)
     if value then
-        -- Start bang
         if currentTarget == "" then
             Notif:Notify("No target set", 5, "warning")
             return
@@ -966,19 +1230,28 @@ local BangToggle = TargetTab:NewToggle("Bang", false, function(value)
             
             getgenv().banging = true
             getgenv().before_bang = LocalPlayer.Character.HumanoidRootPart.CFrame
-            tweento(Players[targetName].Character.HumanoidRootPart.CFrame)
+            
+            -- Use instant TP if enabled, otherwise use tween
+            if getgenv().instant_tp_toggle then
+                local targetPlayer = Players:FindFirstChild(targetName)
+                if targetPlayer then
+                    ForceTPToTarget(targetPlayer)
+                end
+            else
+                --tweento(Players[targetName].Character.HumanoidRootPart.CFrame)
+            end
+            
             task.wait(0.2)
             
             local bang_z = 1.1
             local dir = 1
         
-            
             while getgenv().banging == true do 
                 task.wait()
                 if dir == 1 then
-                    bang_z += 0.3
+                    bang_z += 0.1
                 else 
-                    bang_z -= 0.3
+                    bang_z -= 0.1
                 end 
                 if bang_z > 4 then
                     dir = -1
@@ -992,7 +1265,21 @@ local BangToggle = TargetTab:NewToggle("Bang", false, function(value)
                         return
                     end
                     
-                    LocalPlayer.Character.HumanoidRootPart.CFrame = Players[targetName].Character.HumanoidRootPart.CFrame * CFrame.new(0,0,bang_z)
+                    if getgenv().instant_tp_toggle then
+                        -- Use instant TP positioning
+                        local targetPlayer = Players:FindFirstChild(targetName)
+                        if targetPlayer and targetPlayer.Character then
+                            local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                            if targetRoot then
+                                local targetCharacter = Players[targetName].Character
+                                local targetRoot = targetCharacter and targetCharacter:FindFirstChild("HumanoidRootPart")
+                                sethiddenproperty(LocalPlayer.Character.HumanoidRootPart, "PhysicsRepRootPart", targetRoot)
+                                LocalPlayer.Character.HumanoidRootPart.CFrame = targetRoot.CFrame * CFrame.new(0,0,bang_z*1.2)
+                            end
+                        end
+                    else
+                        LocalPlayer.Character.HumanoidRootPart.CFrame = Players[targetName].Character.HumanoidRootPart.CFrame * CFrame.new(0,0,bang_z)
+                    end
                     
                     if not LocalPlayer.Character.Humanoid:FindFirstChild("dolphin") then
                         local humanoid = LocalPlayer.Character:FindFirstChildWhichIsA("Humanoid")
@@ -1026,7 +1313,6 @@ local BangToggle = TargetTab:NewToggle("Bang", false, function(value)
             end
         end)
     else
-        -- Stop bang
         getgenv().banging = false
         if getgenv().bang then
             getgenv().bang:Stop()
@@ -1034,14 +1320,9 @@ local BangToggle = TargetTab:NewToggle("Bang", false, function(value)
     end
 end)
 
--- Bend toggle
-getgenv().bending = false
-getgenv().before_bend = nil
-getgenv().bend = nil
-
+-- Replace the Bend toggle with this:
 local BendToggle = TargetTab:NewToggle("Bend", false, function(value)
     if value then
-        -- Start bend
         if currentTarget == "" then
             Notif:Notify("No target set", 5, "warning")
             return
@@ -1076,7 +1357,17 @@ local BendToggle = TargetTab:NewToggle("Bend", false, function(value)
             
             getgenv().bending = true
             getgenv().before_bend = LocalPlayer.Character.HumanoidRootPart.CFrame
-            tweento(Players[targetName].Character.HumanoidRootPart.CFrame)
+            
+            -- Use instant TP if enabled, otherwise use tween
+            if getgenv().instant_tp_toggle then
+                local targetPlayer = Players:FindFirstChild(targetName)
+                if targetPlayer then
+                    ForceTPToTarget(targetPlayer)
+                end
+            else
+                --tweento(Players[targetName].Character.HumanoidRootPart.CFrame)
+            end
+            
             task.wait(0.2)
             
             local bang_z = 1.1
@@ -1088,13 +1379,13 @@ local BendToggle = TargetTab:NewToggle("Bend", false, function(value)
             while getgenv().bending == true do 
                 task.wait()
                 if dir == 1 then
-                    bang_z -= 0.1
+                    bang_z -= 0.05
                 else 
-                    bang_z += 0.1
+                    bang_z += 0.05
                 end 
                 if bang_z < -3 then
                     dir = -1
-                elseif bang_z > -1.5 then
+                elseif bang_z > -1.75 then
                     dir = 1 
                 end
                 
@@ -1110,7 +1401,12 @@ local BendToggle = TargetTab:NewToggle("Bend", false, function(value)
                     
                     local lowerTorso = Players[targetName].Character:FindFirstChild("LowerTorso")
                     if lowerTorso then
-                        LocalPlayer.Character.HumanoidRootPart.CFrame = lowerTorso.CFrame * CFrame.new(0,0.5,bang_z)
+                        if getgenv().instant_tp_toggle then
+                            sethiddenproperty(LocalPlayer.Character.HumanoidRootPart, "PhysicsRepRootPart", Players[targetName].Character:FindFirstChild("HumanoidRootPart"))
+                            LocalPlayer.Character.HumanoidRootPart.CFrame = lowerTorso.CFrame * CFrame.new(0,0.63,bang_z*1.45)
+                        else
+                            LocalPlayer.Character.HumanoidRootPart.CFrame = lowerTorso.CFrame * CFrame.new(0,0.5,bang_z)
+                        end
                     end
                     
                     if not LocalPlayer.Character.Humanoid:FindFirstChild("bend") then
@@ -1146,7 +1442,6 @@ local BendToggle = TargetTab:NewToggle("Bend", false, function(value)
             end
         end)
     else
-        -- Stop bend
         getgenv().bending = false
         if getgenv().bend then
             getgenv().bend:Stop()
@@ -1154,13 +1449,9 @@ local BendToggle = TargetTab:NewToggle("Bend", false, function(value)
     end
 end)
 
--- Mount toggle
-getgenv().mounting = false
-getgenv().before_mount = nil
-
+-- Replace the Mount toggle with this:
 local MountToggle = TargetTab:NewToggle("Mount", false, function(value)
     if value then
-        -- Start mount
         if currentTarget == "" then
             Notif:Notify("No target set", 5, "warning")
             return
@@ -1209,7 +1500,20 @@ local MountToggle = TargetTab:NewToggle("Mount", false, function(value)
                     end
                     
                     LocalPlayer.Character.Humanoid.Sit = true
-                    LocalPlayer.Character.HumanoidRootPart.CFrame = Players[targetName].Character.Head.CFrame * CFrame.Angles(0, math.rad(180), 0) * CFrame.new(0, 1, offset)
+                    
+                    if getgenv().instant_tp_toggle then
+                        -- Use instant TP positioning
+                        local targetPlayer = Players:FindFirstChild(targetName)
+                        if targetPlayer and targetPlayer.Character then
+                            local targetHead = targetPlayer.Character:FindFirstChild("Head")
+                            if targetHead then
+                                sethiddenproperty(LocalPlayer.Character.HumanoidRootPart, "PhysicsRepRootPart", targetHead)
+                                LocalPlayer.Character.HumanoidRootPart.CFrame = targetHead.CFrame * CFrame.Angles(0, math.rad(180), 0) * CFrame.new(0, 1, offset*1.2)
+                            end
+                        end
+                    else
+                        LocalPlayer.Character.HumanoidRootPart.CFrame = Players[targetName].Character.Head.CFrame * CFrame.Angles(0, math.rad(180), 0) * CFrame.new(0, 1, offset)
+                    end
                 end)
             end
             
@@ -1236,204 +1540,743 @@ local MountToggle = TargetTab:NewToggle("Mount", false, function(value)
             end
         end)
     else
-        -- Stop mount
         getgenv().mounting = false
+    end
+end)
+
+
+-- Improved ForceTPToTarget function (keep this at the top with other helper functions)
+local function ForceTPToTarget(targetPlayer, offsetCFrame)
+    if not targetPlayer or targetPlayer == LocalPlayer then return end
+    
+    local targetCharacter = targetPlayer.Character
+    if not targetCharacter then return end
+    
+    local targetRoot = targetCharacter:FindFirstChild("HumanoidRootPart")
+    if not targetRoot then return end
+    
+    local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not myRoot then return end
+    
+    -- Set the PhysicsRepRootPart to the target's root part
+    pcall(function()
+        sethiddenproperty(myRoot, "PhysicsRepRootPart", targetRoot)
+    end)
+    
+    -- Apply the offset CFrame
+    local finalCFrame = targetRoot.CFrame * (offsetCFrame or CFrame.new(0, 2, 0))
+    myRoot.CFrame = finalCFrame
+    
+    -- Zero out all velocity components
+    myRoot.AssemblyLinearVelocity = Vector3.zero
+    myRoot.AssemblyAngularVelocity = Vector3.zero
+    myRoot.Velocity = Vector3.zero
+end
+
+-- Replace the entire "New commands" section with this:
+local TargetSec3 = TargetTab:NewSection("New commands")
+
+-- Give Speedboost Toggle
+getgenv().speedboosting = false
+getgenv().before_speedboost = nil
+
+local SpeedboostToggle = TargetTab:NewToggle("give speedboost", false, function(value)
+    getgenv().speedboosting = value
+    local vers = value and "on" or "off"
+    Notif:Notify("Give speedboost: " .. vers, 5, "information")
+    
+    if value then
+        if currentTarget == "" then
+            Notif:Notify("No target set", 5, "warning")
+            getgenv().speedboosting = false
+            return
+        end
+        
+        local resolvedPlayers = GetPlayer(currentTarget)
+        if not resolvedPlayers or #resolvedPlayers == 0 then
+            Notif:Notify("Target not found", 5, "warning")
+            getgenv().speedboosting = false
+            return
+        end
+        
+        -- Save original position
+        getgenv().before_speedboost = LocalPlayer.Character.HumanoidRootPart.CFrame
+        
+        task.spawn(function()
+        local lastTargetPos
+        local lastTime
+
+        while getgenv().speedboosting do
+            local resolvedPlayers = GetPlayer(currentTarget)
+            if resolvedPlayers and #resolvedPlayers > 0 then
+                local targetName = resolvedPlayers[1]
+                local targetPlayer = Players:FindFirstChild(targetName)
+
+                if targetPlayer and targetPlayer.Character then
+                    local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                    local targetHumanoid = targetPlayer.Character:FindFirstChildOfClass("Humanoid")
+                    local localHRP = Players.LocalPlayer.Character
+                        and Players.LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+                    if targetHRP and localHRP then
+                        -- speed calculation
+                        local now = os.clock()
+                        local speed = 0
+
+                        if lastTargetPos and lastTime then
+                            local dt = now - lastTime
+                            if dt > 0 then
+                                speed = (targetHRP.Position - lastTargetPos).Magnitude / dt
+                            end
+                        end
+
+                        lastTargetPos = targetHRP.Position
+                        lastTime = now
+
+                        -- air / jump detection
+                        local inAir = false
+                        if targetHumanoid then
+                            inAir =
+                                targetHumanoid.FloorMaterial == Enum.Material.Air
+                                or targetHumanoid:GetState() == Enum.HumanoidStateType.Jumping
+                                or targetHumanoid:GetState() == Enum.HumanoidStateType.Freefall
+                        end
+
+                        -- choose offset
+                        local offsetCF
+                        if inAir or speed > 50 then
+                            offsetCF = CFrame.new(0, -0.4, 5)
+                        else
+                            offsetCF = CFrame.new(0, -0.4, 0.87)
+                        end
+
+                        -- teleport
+                        ForceTPToTarget(targetPlayer, offsetCF)
+
+                        -- forward velocity
+                        local pushSpeed = 0.15
+                        local forwardVelocity = targetHRP.CFrame.LookVector * pushSpeed
+
+                        localHRP.AssemblyLinearVelocity = Vector3.new(
+                            forwardVelocity.X,
+                            localHRP.AssemblyLinearVelocity.Y,
+                            forwardVelocity.Z
+                        )
+                    end
+                else
+                    getgenv().speedboosting = false
+                    Notif:Notify("Target left, stopping loop", 3, "warning")
+                    break
+                end
+            else
+                getgenv().speedboosting = false
+                Notif:Notify("Target not found, stopping loop", 3, "warning")
+                break
+            end
+
+            RunService.Heartbeat:Wait()
+        end
+
+
+            
+            -- Cleanup
+            local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if myRoot and getgenv().before_speedboost then
+                for i = 1, 5 do
+                    myRoot.Velocity = Vector3.zero
+                    myRoot.AssemblyLinearVelocity = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    myRoot.CFrame = getgenv().before_speedboost
+                    task.wait(0.05)
+                end
+            end
+        end)
+    else
+        -- Reset velocity and return to position
+        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if myRoot then
+            for i = 1, 3 do
+                myRoot.Velocity = Vector3.zero
+                myRoot.AssemblyLinearVelocity = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                task.wait(0.05)
+            end
+            
+            if getgenv().before_speedboost then
+                for i = 1, 3 do
+                    myRoot.CFrame = getgenv().before_speedboost
+                    task.wait(0.05)
+                end
+            end
+        end
+    end
+end)
+
+-- Anti Jump Toggle
+getgenv().anti_jumping = false
+getgenv().before_antijump = nil
+
+local AntiJumpToggle = TargetTab:NewToggle("Anti jump", false, function(value)
+    getgenv().anti_jumping = value
+    local vers = value and "on" or "off"
+    Notif:Notify("Anti jump: " .. vers, 5, "information")
+    
+    if value then
+        if currentTarget == "" then
+            Notif:Notify("No target set", 5, "warning")
+            getgenv().anti_jumping = false
+            return
+        end
+        
+        local resolvedPlayers = GetPlayer(currentTarget)
+        if not resolvedPlayers or #resolvedPlayers == 0 then
+            Notif:Notify("Target not found", 5, "warning")
+            getgenv().anti_jumping = false
+            return
+        end
+        
+        -- Save original position
+        getgenv().before_antijump = LocalPlayer.Character.HumanoidRootPart.CFrame
+        
+        task.spawn(function()
+            while getgenv().anti_jumping do
+                local resolvedPlayers = GetPlayer(currentTarget)
+                if resolvedPlayers and #resolvedPlayers > 0 then
+                    local targetName = resolvedPlayers[1]
+                    local targetPlayer = Players:FindFirstChild(targetName)
+                    if targetPlayer and targetPlayer.Character then
+                        local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                        if targetRoot and myRoot then
+                            -- Get target position only (no rotation)
+                            local targetPos = targetPlayer.Character:FindFirstChild("Head").Position
+                            
+                            -- Set PhysicsRepRootPart
+                            pcall(function()
+                                sethiddenproperty(myRoot, "PhysicsRepRootPart", targetRoot)
+                            end)
+                            
+                            -- Apply position with offset, but keep player's original look direction
+                            local lookVector = myRoot.CFrame.LookVector
+                            local upVector = Vector3.new(0, 1, 0)
+                            
+                            -- Create CFrame at target position + offset, facing player's direction
+                            myRoot.CFrame = CFrame.new(targetPos.X, targetPos.Y, targetPos.Z) * CFrame.new(0, 1.6, 0) * CFrame.Angles(math.rad(90), 0, 0)
+                            
+                            -- Zero velocity
+                            myRoot.AssemblyLinearVelocity = Vector3.zero
+                            myRoot.AssemblyAngularVelocity = Vector3.zero
+                            myRoot.Velocity = Vector3.zero
+                        end
+                    else
+                        getgenv().anti_jumping = false
+                        Notif:Notify("Target left, stopping loop", 3, "warning")
+                        break
+                    end
+                else
+                    getgenv().anti_jumping = false
+                    Notif:Notify("Target not found, stopping loop", 3, "warning")
+                    break
+                end
+                RunService.Heartbeat:Wait()
+            end
+            
+            -- Cleanup
+            local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if myRoot and getgenv().before_antijump then
+                for i = 1, 5 do
+                    myRoot.Velocity = Vector3.zero
+                    myRoot.AssemblyLinearVelocity = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    myRoot.CFrame = getgenv().before_antijump
+                    task.wait(0.05)
+                end
+            end
+        end)
+    else
+        -- Reset velocity and return to position
+        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if myRoot then
+            for i = 1, 3 do
+                myRoot.Velocity = Vector3.zero
+                myRoot.AssemblyLinearVelocity = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                task.wait(0.05)
+            end
+            
+            if getgenv().before_antijump then
+                for i = 1, 3 do
+                    myRoot.CFrame = getgenv().before_antijump
+                    task.wait(0.05)
+                end
+            end
+        end
+    end
+end)
+
+-- Platform Toggle (with rotation lock)
+getgenv().platforming = false
+getgenv().before_platform = nil
+
+local PlatformToggle2 = TargetTab:NewToggle("platform", false, function(value)
+    getgenv().platforming = value
+    local vers = value and "on" or "off"
+    Notif:Notify("Platform: " .. vers, 5, "information")
+    
+    if value then
+        if currentTarget == "" then
+            Notif:Notify("No target set", 5, "warning")
+            getgenv().platforming = false
+            return
+        end
+        
+        local resolvedPlayers = GetPlayer(currentTarget)
+        if not resolvedPlayers or #resolvedPlayers == 0 then
+            Notif:Notify("Target not found", 5, "warning")
+            getgenv().platforming = false
+            return
+        end
+        
+        -- Save original position
+        getgenv().before_platform = LocalPlayer.Character.HumanoidRootPart.CFrame
+        
+        task.spawn(function()
+        local lastTargetPos
+        local lastTime
+
+        while getgenv().platforming do
+            local resolvedPlayers = GetPlayer(currentTarget)
+            if resolvedPlayers and #resolvedPlayers > 0 then
+                local targetName = resolvedPlayers[1]
+                local targetPlayer = Players:FindFirstChild(targetName)
+
+                if targetPlayer and targetPlayer.Character then
+                    local targetRoot = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                    local targetFoot = targetPlayer.Character:FindFirstChild("LeftFoot")
+                    local myRoot = LocalPlayer.Character
+                        and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+                    if targetRoot and targetFoot and myRoot then
+                        -- speed calculation
+                        local now = os.clock()
+                        local speed = 0
+
+                        if lastTargetPos and lastTime then
+                            local dt = now - lastTime
+                            if dt > 0 then
+                                speed = (targetRoot.Position - lastTargetPos).Magnitude / dt
+                            end
+                        end
+
+                        lastTargetPos = targetRoot.Position
+                        lastTime = now
+
+                        -- choose offset based on speed
+                        local offsetCF
+                        if speed > 50 then
+                            offsetCF = CFrame.new(0, 1.6, 0)
+                        else
+                            offsetCF = CFrame.new(0, -0.73, 0)
+                        end
+
+                        -- set PhysicsRepRootPart
+                        pcall(function()
+                            sethiddenproperty(myRoot, "PhysicsRepRootPart", targetRoot)
+                        end)
+
+                        -- position only, fixed rotation
+                        myRoot.CFrame =
+                            CFrame.new(targetFoot.Position)
+                            * offsetCF
+                            * CFrame.Angles(math.rad(90), 0, 0)
+
+                        -- zero velocity
+                        myRoot.AssemblyLinearVelocity = Vector3.zero
+                        myRoot.AssemblyAngularVelocity = Vector3.zero
+                        myRoot.Velocity = Vector3.zero
+                    end
+                else
+                    getgenv().platforming = false
+                    Notif:Notify("Target left, stopping loop", 3, "warning")
+                    break
+                end
+            else
+                getgenv().platforming = false
+                Notif:Notify("Target not found, stopping loop", 3, "warning")
+                break
+            end
+
+            RunService.Heartbeat:Wait()
+        end
+
+            
+            -- Cleanup
+            local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if myRoot and getgenv().before_platform then
+                for i = 1, 5 do
+                    myRoot.Velocity = Vector3.zero
+                    myRoot.AssemblyLinearVelocity = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    myRoot.CFrame = getgenv().before_platform * CFrane.new(0,2,0)
+                    task.wait(0.1)
+                end
+            end
+        end)
+    else
+        -- Reset velocity and return to position
+        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if myRoot then
+            for i = 1, 3 do
+                myRoot.Velocity = Vector3.zero
+                myRoot.AssemblyLinearVelocity = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                task.wait(0.05)
+            end
+            
+            if getgenv().before_platform then
+                for i = 1, 3 do
+                    myRoot.CFrame = getgenv().before_platform
+                    task.wait(0.05)
+                end
+            end
+        end
+    end
+end)
+
+-- Face Fuck Toggle
+getgenv().face_fucking = false
+getgenv().before_facefuck = nil
+
+local FaceFuckToggle = TargetTab:NewToggle("face fuck", false, function(value)
+    getgenv().face_fucking = value
+    local vers = value and "on" or "off"
+    Notif:Notify("Face fuck: " .. vers, 5, "information")
+    
+    if value then
+        if currentTarget == "" then
+            Notif:Notify("No target set", 5, "warning")
+            getgenv().face_fucking = false
+            return
+        end
+        
+        local resolvedPlayers = GetPlayer(currentTarget)
+        if not resolvedPlayers or #resolvedPlayers == 0 then
+            Notif:Notify("Target not found", 5, "warning")
+            getgenv().face_fucking = false
+            return
+        end
+        
+        -- Save original position
+        getgenv().before_facefuck = LocalPlayer.Character.HumanoidRootPart.CFrame
+        
+        task.spawn(function()
+            local z_offset = -2
+            local direction = 1
+            
+            while getgenv().face_fucking do
+                local resolvedPlayers = GetPlayer(currentTarget)
+                if resolvedPlayers and #resolvedPlayers > 0 then
+                    local targetName = resolvedPlayers[1]
+                    local targetPlayer = Players:FindFirstChild(targetName)
+                    if targetPlayer and targetPlayer.Character then
+                        local targetHead = targetPlayer.Character:FindFirstChild("Head")
+                        if targetHead then
+                            -- Update z_offset to oscillate between -3 and -1.7
+                            if z_offset >= -1.7 then
+                                direction = -1
+                            elseif z_offset <= -3 then
+                                direction = 1
+                            end
+                            z_offset = z_offset + (0.05 * direction)
+                            
+                            -- Use improved ForceTPToTarget with animated offset
+                            local offsetCF = CFrame.new(0, 0.1, z_offset) * CFrame.Angles(0, math.rad(180), 0)
+                            
+                            local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                            if myRoot then
+                                pcall(function()
+                                    sethiddenproperty(myRoot, "PhysicsRepRootPart", targetHead)
+                                end)
+                                
+                                myRoot.CFrame = targetHead.CFrame * offsetCF
+                                myRoot.AssemblyLinearVelocity = Vector3.zero
+                                myRoot.AssemblyAngularVelocity = Vector3.zero
+                                myRoot.Velocity = Vector3.zero
+                            end
+                        end
+                    else
+                        getgenv().face_fucking = false
+                        Notif:Notify("Target left, stopping loop", 3, "warning")
+                        break
+                    end
+                else
+                    getgenv().face_fucking = false
+                    Notif:Notify("Target not found, stopping loop", 3, "warning")
+                    break
+                end
+                RunService.Heartbeat:Wait()
+            end
+            
+            -- Cleanup
+            local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if myRoot and getgenv().before_facefuck then
+                for i = 1, 5 do
+                    myRoot.Velocity = Vector3.zero
+                    myRoot.AssemblyLinearVelocity = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    myRoot.CFrame = getgenv().before_facefuck
+                    task.wait(0.05)
+                end
+            end
+        end)
+    else
+        -- Reset velocity and return to position
+        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if myRoot then
+            for i = 1, 3 do
+                myRoot.Velocity = Vector3.zero
+                myRoot.AssemblyLinearVelocity = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                task.wait(0.05)
+            end
+            
+            if getgenv().before_facefuck then
+                for i = 1, 3 do
+                    myRoot.CFrame = getgenv().before_facefuck
+                    task.wait(0.05)
+                end
+            end
+        end
+    end
+end)
+
+-- Hat Toggle
+getgenv().hatting = false
+getgenv().before_hat = nil
+
+local HatToggle = TargetTab:NewToggle("hat", false, function(value)
+    getgenv().hatting = value
+    local vers = value and "on" or "off"
+    Notif:Notify("Hat: " .. vers, 5, "information")
+    
+    if value then
+        if currentTarget == "" then
+            Notif:Notify("No target set", 5, "warning")
+            getgenv().hatting = false
+            return
+        end
+        
+        local resolvedPlayers = GetPlayer(currentTarget)
+        if not resolvedPlayers or #resolvedPlayers == 0 then
+            Notif:Notify("Target not found", 5, "warning")
+            getgenv().hatting = false
+            return
+        end
+        
+        -- Save original position
+        getgenv().before_hat = LocalPlayer.Character.HumanoidRootPart.CFrame
+        
+        task.spawn(function()
+            local y_angle = 0
+            
+            while getgenv().hatting do
+                local resolvedPlayers = GetPlayer(currentTarget)
+                if resolvedPlayers and #resolvedPlayers > 0 then
+                    local targetName = resolvedPlayers[1]
+                    local targetPlayer = Players:FindFirstChild(targetName)
+                    if targetPlayer and targetPlayer.Character then
+                        local targetHead = targetPlayer.Character:FindFirstChild("Head")
+                        if targetHead then
+                            -- Increment y_angle and wrap around at 360
+                            y_angle = y_angle + 5
+                            if y_angle >= 360 then
+                                y_angle = 0
+                            end
+                            
+                            -- Use improved ForceTPToTarget with spinning offset
+                            local offsetCF = CFrame.new(0, 3, 0.7) * CFrame.Angles(0, math.rad(y_angle), 0)
+                            
+                            local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                            if myRoot then
+                                pcall(function()
+                                    sethiddenproperty(myRoot, "PhysicsRepRootPart", targetHead)
+                                end)
+                                
+                                myRoot.CFrame = targetHead.CFrame * offsetCF
+                                myRoot.AssemblyLinearVelocity = Vector3.zero
+                                myRoot.AssemblyAngularVelocity = Vector3.zero
+                                myRoot.Velocity = Vector3.zero
+                            end
+                        end
+                    else
+                        getgenv().hatting = false
+                        Notif:Notify("Target left, stopping loop", 3, "warning")
+                        break
+                    end
+                else
+                    getgenv().hatting = false
+                    Notif:Notify("Target not found, stopping loop", 3, "warning")
+                    break
+                end
+                RunService.Heartbeat:Wait()
+            end
+            
+            -- Cleanup
+            local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            if myRoot and getgenv().before_hat then
+                for i = 1, 5 do
+                    myRoot.Velocity = Vector3.zero
+                    myRoot.AssemblyLinearVelocity = Vector3.zero
+                    myRoot.AssemblyAngularVelocity = Vector3.zero
+                    myRoot.CFrame = getgenv().before_hat
+                    task.wait(0.05)
+                end
+            end
+        end)
+    else
+        -- Reset velocity and return to position
+        local myRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if myRoot then
+            for i = 1, 3 do
+                myRoot.Velocity = Vector3.zero
+                myRoot.AssemblyLinearVelocity = Vector3.zero
+                myRoot.AssemblyAngularVelocity = Vector3.zero
+                task.wait(0.05)
+            end
+            
+            if getgenv().before_hat then
+                for i = 1, 3 do
+                    myRoot.CFrame = getgenv().before_hat
+                    task.wait(0.05)
+                end
+            end
+        end
     end
 end)
 
 
 --// ANIMATIONS TAB
 local AnimationsTab = Init:NewTab("Animations")
-local DancesSec = AnimationsTab:NewSection("Dances")
+local DancesSec = AnimationsTab:NewSection("Dances & Emotes")
 
--- Dance IDs
+-- Combined Dance & Emote IDs
 local dance_ids = {
     "rbxassetid://136490740599725",
     "rbxassetid://121966805049108",
     "rbxassetid://129764254213842",
     "rbxassetid://93086419490844",
     "rbxassetid://76099554484027",
-    "rbxassetid://127118661424463"
+    "rbxassetid://127118661424463",
+    "rbxassetid://136095999219650", -- Billy Bounce
+    "rbxassetid://116714406076290", -- Zero Two Dance v2
+    "rbxassetid://82682811348660",  -- Jabba Switchway
+    "rbxassetid://133394554631338"  -- Beat
 }
 
--- Initialize dance variables
-getgenv().rand_dance = nil
-getgenv().twerk = nil
-getgenv().griddy = nil
-getgenv().gangnam = nil
-getgenv().unemployment = nil
-getgenv().carson = nil
-getgenv().caremel = nil
-getgenv().jerking = false
+-- Animation globals - single track for all animations
+getgenv().current_anim = nil
 
--- Animation speed variable
+-- Animation speed
 local animation_speed = 1
 
--- Function to stop all dances
+-- Stop all animations
 local function stop_dances()
-    if getgenv().rand_dance then
-        getgenv().rand_dance:Stop()
-        getgenv().rand_dance = nil
+    if getgenv().current_anim then
+        getgenv().current_anim:Stop()
+        getgenv().current_anim = nil
     end
-    if getgenv().twerk then
-        getgenv().twerk:Stop()
-        getgenv().twerk = nil
-    end
-    if getgenv().griddy then
-        getgenv().griddy:Stop()
-        getgenv().griddy = nil
-    end
-    if getgenv().gangnam then
-        getgenv().gangnam:Stop()
-        getgenv().gangnam = nil
-    end
-    if getgenv().unemployment then
-        getgenv().unemployment:Stop()
-        getgenv().unemployment = nil
-    end
-    if getgenv().carson then
-        getgenv().carson:Stop()
-        getgenv().carson = nil
-    end
-    if getgenv().caremel then
-        getgenv().caremel:Stop()
-        getgenv().caremel = nil
-    end
-    getgenv().jerking = false
 end
 
--- Function to update animation speed for all active dances
+-- Update speed
 local function updateAnimationSpeed(speed)
-    if getgenv().rand_dance then
-        getgenv().rand_dance:AdjustSpeed(speed)
-    end
-    if getgenv().twerk then
-        getgenv().twerk:AdjustSpeed(speed)
-    end
-    if getgenv().griddy then
-        getgenv().griddy:AdjustSpeed(speed)
-    end
-    if getgenv().gangnam then
-        getgenv().gangnam:AdjustSpeed(speed)
-    end
-    if getgenv().unemployment then
-        getgenv().unemployment:AdjustSpeed(speed)
-    end
-    if getgenv().carson then
-        getgenv().carson:AdjustSpeed(speed)
-    end
-    if getgenv().caremel then
-        getgenv().caremel:AdjustSpeed(speed)
+    if getgenv().current_anim then
+        getgenv().current_anim:AdjustSpeed(speed)
     end
 end
 
 -- Animation Speed Slider
-local AnimSpeedSlider = AnimationsTab:NewSlider(
+AnimationsTab:NewSlider(
     "Animation speed",
     "",
     true,
     "x",
-    { min = 0, max = 5, default = 1 },
+    { min = 0, max = 6, default = 1 },
     function(value)
         animation_speed = value
         updateAnimationSpeed(value)
     end
 )
 
--- Random Dance Button
-local RandomDance = AnimationsTab:NewButton("Random Dance", function()
+-- Helper to play animation
+local function playAnim(id, name)
     stop_dances()
-    local animation = Instance.new("Animation")
-    animation.AnimationId = dance_ids[math.random(1, #dance_ids)]
-    getgenv().rand_dance = LocalPlayer.Character.Humanoid:LoadAnimation(animation)
-    getgenv().rand_dance.Looped = true
-    getgenv().rand_dance.Priority = Enum.AnimationPriority.Action4
-    getgenv().rand_dance:Play()
-    getgenv().rand_dance:AdjustSpeed(animation_speed)
-    Notif:Notify("Playing random dance", 3, "information")
+    local anim = Instance.new("Animation")
+    anim.AnimationId = id
+    getgenv().current_anim = LocalPlayer.Character.Humanoid:LoadAnimation(anim)
+    getgenv().current_anim.Looped = true
+    getgenv().current_anim.Priority = Enum.AnimationPriority.Action4
+    getgenv().current_anim:Play()
+    getgenv().current_anim:AdjustSpeed(animation_speed)
+    
+    if name then
+        Notif:Notify("Playing: " .. name, 2, "information")
+    end
+end
+
+-- Random Dance/Emote
+AnimationsTab:NewButton("Random Dance/Emote", function()
+    playAnim(dance_ids[math.random(1, #dance_ids)], "Random")
 end)
 
--- Dance 1 - Shake
-local Dance1 = AnimationsTab:NewButton("Dance 1 - Shake", function()
-    stop_dances()
-    local animation = Instance.new("Animation")
-    animation.AnimationId = "rbxassetid://107109795056101"
-    getgenv().twerk = LocalPlayer.Character.Humanoid:LoadAnimation(animation)
-    getgenv().twerk.Looped = true
-    getgenv().twerk.Priority = Enum.AnimationPriority.Action4
-    getgenv().twerk:Play()
-    getgenv().twerk:AdjustSpeed(animation_speed)
-    Notif:Notify("Playing Shake dance", 3, "information")
+-- Griddy
+AnimationsTab:NewButton("Griddy", function()
+    playAnim("rbxassetid://121966805049108", "Griddy")
 end)
 
--- Dance 2 - Griddy
-local Dance2 = AnimationsTab:NewButton("Dance 2 - Griddy", function()
-    stop_dances()
-    local animation = Instance.new("Animation")
-    animation.AnimationId = "rbxassetid://121966805049108"
-    getgenv().griddy = LocalPlayer.Character.Humanoid:LoadAnimation(animation)
-    getgenv().griddy.Looped = true
-    getgenv().griddy.Priority = Enum.AnimationPriority.Action4
-    getgenv().griddy:Play()
-    getgenv().griddy:AdjustSpeed(animation_speed)
-    Notif:Notify("Playing Griddy dance", 3, "information")
+-- Gangnam
+AnimationsTab:NewButton("Gangnam", function()
+    playAnim("rbxassetid://129764254213842", "Gangnam")
 end)
 
--- Dance 3 - Gangnam
-local Dance3 = AnimationsTab:NewButton("Dance 3 - Gangnam", function()
-    stop_dances()
-    local animation = Instance.new("Animation")
-    animation.AnimationId = "rbxassetid://129764254213842"
-    getgenv().gangnam = LocalPlayer.Character.Humanoid:LoadAnimation(animation)
-    getgenv().gangnam.Looped = true
-    getgenv().gangnam.Priority = Enum.AnimationPriority.Action4
-    getgenv().gangnam:Play()
-    getgenv().gangnam:AdjustSpeed(animation_speed)
-    Notif:Notify("Playing Gangnam Style", 3, "information")
+-- Unemployment
+AnimationsTab:NewButton("Unemployment", function()
+    playAnim("rbxassetid://93086419490844", "Unemployment")
 end)
 
--- Dance 4 - Unemployment
-local Dance4 = AnimationsTab:NewButton("Dance 4 - Unemployment", function()
-    stop_dances()
-    local animation = Instance.new("Animation")
-    animation.AnimationId = "rbxassetid://93086419490844"
-    getgenv().unemployment = LocalPlayer.Character.Humanoid:LoadAnimation(animation)
-    getgenv().unemployment.Looped = true
-    getgenv().unemployment.Priority = Enum.AnimationPriority.Action4
-    getgenv().unemployment:Play()
-    getgenv().unemployment:AdjustSpeed(animation_speed)
-    Notif:Notify("Playing Unemployment dance", 3, "information")
+-- Carson
+AnimationsTab:NewButton("Carson", function()
+    playAnim("rbxassetid://76099554484027", "Carson")
 end)
 
--- Dance 5 - Carson
-local Dance5 = AnimationsTab:NewButton("Dance 5 - Carson", function()
-    stop_dances()
-    local animation = Instance.new("Animation")
-    animation.AnimationId = "rbxassetid://76099554484027"
-    getgenv().carson = LocalPlayer.Character.Humanoid:LoadAnimation(animation)
-    getgenv().carson.Looped = true
-    getgenv().carson.Priority = Enum.AnimationPriority.Action4
-    getgenv().carson:Play()
-    getgenv().carson:AdjustSpeed(animation_speed)
-    Notif:Notify("Playing Carson dance", 3, "information")
+-- Caremel
+AnimationsTab:NewButton("Caremel", function()
+    playAnim("rbxassetid://127118661424463", "Caremel")
 end)
 
--- Dance 6 - Caremel
-local Dance6 = AnimationsTab:NewButton("Dance 6 - Caremel", function()
-    stop_dances()
-    local animation = Instance.new("Animation")
-    animation.AnimationId = "rbxassetid://127118661424463"
-    getgenv().caremel = LocalPlayer.Character.Humanoid:LoadAnimation(animation)
-    getgenv().caremel.Looped = true
-    getgenv().caremel.Priority = Enum.AnimationPriority.Action4
-    getgenv().caremel:Play()
-    getgenv().caremel:AdjustSpeed(animation_speed)
-    Notif:Notify("Playing Caremel dance", 3, "information")
+-- Billy Bounce
+AnimationsTab:NewButton("Billy Bounce", function()
+    playAnim("rbxassetid://136095999219650", "Billy Bounce")
+end)
+
+-- Zero Two Dance v2
+AnimationsTab:NewButton("Zero Two Dance v2", function()
+    playAnim("rbxassetid://116714406076290", "Zero Two Dance v2")
+end)
+
+-- Jabba Switchway
+AnimationsTab:NewButton("Jabba Switchway", function()
+    playAnim("rbxassetid://82682811348660", "Jabba Switchway")
+end)
+
+-- Beat
+AnimationsTab:NewButton("Beat", function()
+    playAnim("rbxassetid://133394554631338", "Beat")
 end)
 
 -- Jerk Toggle
 local JerkToggle = AnimationsTab:NewToggle("Jerk", false, function(value)
     if value then
+        stop_dances() -- Stop any playing animations first
         getgenv().jerking = true
         task.spawn(function()
             local track
@@ -1450,7 +2293,7 @@ local JerkToggle = AnimationsTab:NewToggle("Jerk", false, function(value)
                     track:AdjustSpeed(0.5 * animation_speed)
                     track.TimePosition = 0.6
                     task.wait(0.1)
-                    while track and track.TimePosition < (0.7) do task.wait(0.1) end
+                    while track and track.TimePosition < (0.75) do task.wait(0.1) end
                     if track then
                         track:Stop()
                         track = nil
@@ -1468,6 +2311,7 @@ end)
 -- Stop All Button
 local StopAll = AnimationsTab:NewButton("Stop All Animations", function()
     stop_dances()
+    getgenv().jerking = false
     Notif:Notify("All animations stopped", 3, "success")
 end)
 
@@ -1718,9 +2562,9 @@ RunService.Heartbeat:Connect(function(dt)
     if not character then return end
 
 
-    if gunDrop == true then
+    if gunDrop then
         local gunDropped = false
-        local gunCFrame = nil
+        local gunCFrame
 
         for _, v in pairs(workspace:GetChildren()) do
             for _, k in pairs(v:GetChildren()) do
@@ -1730,12 +2574,17 @@ RunService.Heartbeat:Connect(function(dt)
                     break
                 end
             end
-            if gunDropped and getgenv().wasGunDropped == false then 
-                getgenv().wasGunDropped = true
-                Notif:Notify("Gun has been dropped", 5, "success")
-            elseif gunDropped == false then
-                getgenv().wasGunDropped = false
+            if gunDropped then
+                break
             end
+        end
+
+        -- state transition handling
+        if gunDropped and not getgenv().wasGunDropped then
+            getgenv().wasGunDropped = true
+            Notif:Notify("Gun has been dropped", 5, "success")
+        elseif not gunDropped then
+            getgenv().wasGunDropped = false
         end
     else
         getgenv().wasGunDropped = false
@@ -1802,6 +2651,11 @@ RunService.Heartbeat:Connect(function(dt)
 end)
 
 game:GetService("RunService").Heartbeat:Connect(function()
+    local Players = game:GetService("Players")
+    local LocalPlayer = Players.LocalPlayer
+
+
+
   if getgenv().up_boost == true  then
     
     
@@ -1829,3 +2683,8 @@ game:GetService("RunService").Heartbeat:Connect(function()
     end
   end
 end)
+
+
+local LoadingXSX = Notif:Notify("Loading turfyware V2 has loaded", 5, "information") 
+local LoadingXSX = Notif:Notify("Update log:", 10, "information") 
+local LoadingXSX = Notif:Notify("Added skibidi phonk (boii ts so tuff boii)", 10, "information") 
