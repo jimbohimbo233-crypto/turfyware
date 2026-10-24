@@ -1,0 +1,277 @@
+-- =============================================================================
+-- Owner nametag — extracted from the ESP BillboardGui in __DARKLUA_BUNDLE_MODULES.ab
+--   * only targets the player "ErevuIbalet79" (never the local player)
+--   * 25% smaller than the original ESP pill
+--   * static text: "OWNER" / "._mef"
+--   * distance cap 100 studs, hard size cap at 1.0
+--   * all names are "altCtrlOwnerTag" — no Novoline / NV references
+--
+-- Effects kept from the original billboard (labelled 1–7 below):
+--   1. Glass pill        — white base + 90° dark gradient (8,8,9 → 26,26,28)
+--   2. Rim highlight     — 1px inner UIStroke at 86% transparency
+--   3. Avatar headshot   — real Roblox thumbnail
+--   4. Avatar ring       — 1.25px team-coloured stroke
+--   5. Health bar        — 2px, live colour green → orange → red
+--   6. Distance fade     — eases from 80 studs, capped at 0.45
+--   7. Distance scale    — shrinks with distance, hard-capped
+-- =============================================================================
+
+local Players    = game:GetService('Players')
+local CoreGui    = game:GetService('CoreGui')
+local RunService = game:GetService('RunService')
+local TS         = game:GetService('TextService')
+
+local TARGET_NAME   = 'ErevuIbalet79'
+local MAX_DIST      = 100           -- hard distance cap, studs
+local MAX_SCALE     = 1.0           -- hard size cap on the pill UIScale
+local PILL_W        = 98            -- 130 × 0.75
+local PILL_H        = 33            -- 44 × 0.75
+local VIS_FONT      = 'rbxasset://fonts/families/Montserrat.json'
+local NAME_TEXT     = 'OWNER'
+local SUB_TEXT      = '._mef'
+local RING_FALLBACK = Color3.fromRGB(245, 197, 66)   -- gold
+
+local lp = Players.LocalPlayer
+
+-- =============================================================================
+-- Portable Instance.new wrapper (second arg = properties table) — works on
+-- executors that do not extend Instance.new.
+-- =============================================================================
+local function createInstance(className, props)
+    local inst = Instance.new(className)
+    if props then
+        local parent = props.Parent
+        for k, v in props do
+            if k ~= 'Parent' and type(k) == 'string' then inst[k] = v end
+        end
+        if parent then inst.Parent = parent end
+    end
+    return inst
+end
+
+-- =============================================================================
+-- Helpers
+-- =============================================================================
+local function visRoot(char)
+    return char and (char:FindFirstChild('HumanoidRootPart')
+                  or char:FindFirstChild('UpperTorso')
+                  or char:FindFirstChild('Torso'))
+end
+local function visHead(char)
+    return char and (char:FindFirstChild('Head') or visRoot(char))
+end
+
+-- Team colour with gold fallback — no dependency on Novoline globals.
+local function visColor(p)
+    if p and p.Team then
+        local ok, col = pcall(function() return p.Team.TeamColor.Color end)
+        if ok and typeof(col) == 'Color3' then return col end
+    end
+    return RING_FALLBACK
+end
+
+-- =============================================================================
+-- Billboard (visMakeLabel) — ported, 25% smaller
+-- =============================================================================
+local entry = {
+    p = nil, bb = nil, pill = nil, rim = nil, scale = nil,
+    avatar = nil, ring = nil, name = nil, sub = nil,
+    track = nil, fill = nil,
+}
+
+local function visMakeLabel(p, adornee)
+    if entry.bb then entry.bb.Adornee = adornee return end
+
+    local bb = createInstance('BillboardGui', {
+        Name                  = 'altCtrlOwnerTag',
+        AlwaysOnTop           = true,
+        LightInfluence        = 0,
+        Size                  = UDim2.fromOffset(210, 38),          -- 25% smaller
+        StudsOffsetWorldSpace = Vector3.new(0, 4.2, 0),
+        MaxDistance           = MAX_DIST,
+        Adornee               = adornee,
+        Parent                = CoreGui,
+    })
+
+    local pill = createInstance('Frame', {
+        Parent = bb, Name = 'Pill',
+        AnchorPoint = Vector2.new(0.5, 1),
+        Position    = UDim2.new(0.5, 0, 1, -1),
+        Size        = UDim2.fromOffset(PILL_W, PILL_H),
+        BackgroundColor3       = Color3.new(1, 1, 1),
+        BackgroundTransparency = 0.12,
+        BorderSizePixel = 0,
+    })
+    createInstance('UICorner', { Parent = pill, CornerRadius = UDim.new(1, 0) })
+
+    -- Effect 1: glass gradient
+    createInstance('UIGradient', {
+        Parent = pill, Rotation = 90,
+        Color  = ColorSequence.new(Color3.fromRGB(8, 8, 9), Color3.fromRGB(26, 26, 28)),
+    })
+
+    -- Effect 2: rim highlight
+    local rim = createInstance('UIStroke', {
+        Parent = pill, Color = Color3.new(1, 1, 1),
+        Thickness = 1, Transparency = 0.86,
+    })
+    local scale = createInstance('UIScale', { Parent = pill })
+
+    -- Effects 3 + 4: avatar headshot with team ring
+    local avatar = createInstance('ImageLabel', {
+        Parent = pill, Name = 'Avatar',
+        AnchorPoint = Vector2.new(0, 0.5),
+        Position    = UDim2.new(0, 4, 0.5, 0),
+        Size        = UDim2.fromOffset(23, 23),
+        BackgroundColor3 = Color3.fromRGB(40, 40, 44),
+        BorderSizePixel  = 0,
+        Image = 'rbxthumb://type=AvatarHeadShot&id='
+             .. tostring(p.UserId) .. '&w=48&h=48',
+    })
+    createInstance('UICorner', { Parent = avatar, CornerRadius = UDim.new(1, 0) })
+    local ring = createInstance('UIStroke', {
+        Parent = avatar, Color = visColor(p), Thickness = 1.25,
+    })
+
+    -- Static text: "OWNER" + "._mef" (no longer driven by paint)
+    local nameLbl = createInstance('TextLabel', {
+        Parent = pill, Name = 'Name', BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(32, 4),
+        Size     = UDim2.new(1, -41, 0, 12),
+        FontFace = Font.new(VIS_FONT, Enum.FontWeight.Bold),
+        TextSize = 10,
+        TextColor3 = Color3.fromRGB(242, 242, 242),
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Text = NAME_TEXT,
+    })
+    local subLbl = createInstance('TextLabel', {
+        Parent = pill, Name = 'Sub', BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(32, 15),
+        Size     = UDim2.new(1, -41, 0, 10),
+        FontFace = Font.new(VIS_FONT, Enum.FontWeight.Medium),
+        TextSize = 8,
+        TextColor3 = Color3.fromRGB(154, 154, 162),
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Text = SUB_TEXT,
+    })
+
+    -- Effect 5: health bar
+    local track = createInstance('Frame', {
+        Parent = pill, Name = 'Health',
+        Position = UDim2.fromOffset(32, 26),
+        Size     = UDim2.new(1, -43, 0, 2),
+        BackgroundColor3       = Color3.new(1, 1, 1),
+        BackgroundTransparency = 0.86,
+        BorderSizePixel        = 0,
+    })
+    createInstance('UICorner', { Parent = track, CornerRadius = UDim.new(1, 0) })
+    local fill = createInstance('Frame', {
+        Parent = track, Size = UDim2.fromScale(1, 1),
+        BackgroundColor3 = Color3.fromRGB(78, 229, 154),
+        BorderSizePixel  = 0,
+    })
+    createInstance('UICorner', { Parent = fill, CornerRadius = UDim.new(1, 0) })
+
+    entry.p, entry.bb, entry.pill      = p, bb, pill
+    entry.rim, entry.scale             = rim, scale
+    entry.avatar, entry.ring           = avatar, ring
+    entry.name, entry.sub              = nameLbl, subLbl
+    entry.track, entry.fill            = track, fill
+end
+
+-- =============================================================================
+-- Paint (visPaintLabel) — only updates dynamic effects, not the text
+-- =============================================================================
+local function visPaintLabel(p, char, dist, col)
+    local hum = char:FindFirstChildOfClass('Humanoid')
+    local hp = 1
+    if hum and hum.MaxHealth > 0 then
+        hp = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+    end
+
+    -- Effects 3 + 5: ring colour, health bar
+    entry.ring.Color = col
+    entry.fill.Size  = UDim2.fromScale(hp, 1)
+    entry.fill.BackgroundColor3 =
+        hp > 0.6 and Color3.fromRGB(78, 229, 154)
+     or hp > 0.3 and Color3.fromRGB(255, 170, 64)
+     or Color3.fromRGB(255, 92, 92)
+
+    -- Effect 7: distance scale, hard-capped
+    local raw = 1 - (dist - 40) / 400
+    if dist > 60 then raw = 1 - (dist - 60) / 90 end
+    entry.scale.Scale = math.clamp(raw, 0.35, MAX_SCALE)
+
+    -- Effect 6: distance fade
+    local fade = math.clamp((dist - 80) / 500, 0, 0.45)
+    entry.pill.BackgroundTransparency   = 0.12 + fade
+    entry.rim.Transparency              = 0.86 + fade * 0.3
+    entry.name.TextTransparency         = fade
+    entry.sub.TextTransparency          = fade
+    entry.avatar.ImageTransparency      = fade
+    entry.avatar.BackgroundTransparency = fade
+    entry.ring.Transparency             = fade
+    entry.track.BackgroundTransparency  = 0.86 + fade * 0.2
+    entry.fill.BackgroundTransparency   = fade
+end
+
+-- =============================================================================
+-- Target gating / distance
+-- =============================================================================
+local function visDestroyEntry()
+    if entry.bb then pcall(function() entry.bb:Destroy() end) end
+    entry.p, entry.bb = nil, nil
+end
+
+local function isTarget(p)
+    return p
+        and p.Parent == Players
+        and p.Name == TARGET_NAME
+        and p ~= lp
+end
+
+local function visEnsure()
+    local p = Players:FindFirstChild(TARGET_NAME)
+    if not isTarget(p) then
+        if entry.bb then visDestroyEntry() end
+        return nil
+    end
+
+    local char = p.Character
+    local head = visHead(char)
+    if not head then
+        if entry.bb then visDestroyEntry() end
+        return nil
+    end
+
+    if not entry.bb or not entry.bb.Parent then
+        visMakeLabel(p, head)
+    elseif entry.bb.Adornee ~= head then
+        entry.bb.Adornee = head
+    end
+    return p, char
+end
+
+local function distanceTo(p)
+    local myRoot = visRoot(lp.Character)
+    local tRoot  = visRoot(p.Character)
+    if myRoot and tRoot then
+        return (myRoot.Position - tRoot.Position).Magnitude
+    end
+    return 0
+end
+
+RunService.Heartbeat:Connect(function()
+    local p, char = visEnsure()
+    if not p then return end
+
+    local dist = distanceTo(p)
+
+    if dist > MAX_DIST then
+        if entry.bb then entry.bb.Enabled = false end
+        return
+    end
+    entry.bb.Enabled = true
+
+    visPaintLabel(p, char, math.floor(dist + 0.5), visColor(p))
+end)
